@@ -1,0 +1,78 @@
+# Publish: build the changed packages signed with the repository key, add every other
+# package of the live repository, index, sign, deploy to Pages (pkgs.glassine.org).
+# The signing key is a secret of the "release" environment, which needs an approval
+# per run. Environments and Pages on private repositories need a paid plan, so this
+# starts once the repository is public.
+name: publish
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      packages:
+        description: 'package directories to rebuild, or "all"'
+        default: all
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+env:
+  REPO_URL: https://pkgs.glassine.org/alpine/v3.22/glassine/aarch64
+
+jobs:
+  build:
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 180
+    environment: release
+    outputs:
+      packages: ${{ steps.select.outputs.packages }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Select packages
+        id: select
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT: ${{ inputs.packages }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT" = workflow_dispatch ]; then
+            if [ "$INPUT" = all ]; then p=$(scripts/changed.sh all); else p=$INPUT; fi
+          else
+            p=$(scripts/changed.sh "$BEFORE")
+          fi
+          p=$(printf "%s" "$p" | tr "\n" " ")
+          echo "packages=$p" >> "$GITHUB_OUTPUT"
+          echo "packages: ${p:-none}"
+      - name: Build, merge with the live repository, index
+        if: steps.select.outputs.packages != ''
+        env:
+          ABUILD_PRIVKEY: ${{ secrets.ABUILD_PRIVKEY }}
+        run: |
+          [ -n "$ABUILD_PRIVKEY" ] || { echo "::error::ABUILD_PRIVKEY missing in the release environment"; exit 1; }
+          scripts/docker-build.sh --merge "$REPO_URL" ${{ steps.select.outputs.packages }}
+          scripts/site.sh out
+      - uses: actions/upload-pages-artifact@v5
+        if: steps.select.outputs.packages != ''
+        with:
+          path: out
+
+  deploy:
+    needs: build
+    if: needs.build.outputs.packages != ''
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

@@ -1,0 +1,63 @@
+# Maintainer: Moritz Meißelbach <4208996+Biont@users.noreply.github.com>
+# Kernel for Qualcomm SDM660-family devices, from GlassineOS/linux.
+# Flavor "sdm660": sdm660_defconfig + the device config fragments below.
+pkgname=linux-glassine-sdm660
+pkgver=7.2.3
+# GlassineOS/linux, branch glassine/sdm660-7.2
+_commit=d541cbce7661492598bd5fa548e70865bbc9058a
+pkgrel=0
+_flavor=sdm660
+_fragments="onyx-noteair.config"
+_dtbs="qcom/sdm636-onyx-noteair.dtb"
+pkgdesc="Linux kernel for Qualcomm SDM660-family devices (GlassineOS)"
+url="https://github.com/GlassineOS/linux"
+arch="aarch64"
+license="GPL-2.0-only"
+makedepends="bc bison flex openssl-dev elfutils-dev linux-headers perl python3 findutils diffutils"
+options="!strip !check"
+source="linux-$_commit.tar.gz::https://github.com/GlassineOS/linux/archive/$_commit.tar.gz"
+builddir="$srcdir/linux-$_commit"
+
+_make() {
+	make -C "$builddir" O="$builddir/.output" ARCH=arm64 "$@"
+}
+
+prepare() {
+	default_prepare
+	_make sdm660_defconfig $_fragments
+	# the package release and flavor name the module directory
+	sed -i "s|^CONFIG_LOCALVERSION=.*|CONFIG_LOCALVERSION=\"-$pkgrel-$_flavor\"|" .output/.config
+	_make olddefconfig
+	# every fragment option must have survived (a missing dependency drops it silently)
+	local f l missing=0
+	for f in $_fragments; do
+		grep -hE '^(CONFIG_[A-Z0-9_]+=|# CONFIG_[A-Z0-9_]+ is not set)' \
+			"arch/arm64/configs/$f" | grep -v '^CONFIG_LOCALVERSION=' > "$srcdir/$f.want"
+		while read -r l; do
+			grep -qxF "$l" .output/.config || { error "fragment option not applied: $l"; missing=1; }
+		done < "$srcdir/$f.want"
+	done
+	return $missing
+}
+
+build() {
+	unset LDFLAGS
+	_make -j"${JOBS:-$(nproc)}" Image.gz $_dtbs modules
+	[ "$(_make -s kernelrelease)" = "$pkgver-$pkgrel-$_flavor" ] || die "unexpected kernelrelease"
+}
+
+package() {
+	local d
+	install -Dm644 .output/arch/arm64/boot/Image.gz "$pkgdir"/boot/vmlinuz-$_flavor
+	install -Dm644 .output/.config "$pkgdir"/boot/config-$_flavor
+	install -Dm644 .output/System.map "$pkgdir"/boot/System.map-$_flavor
+	for d in $_dtbs; do
+		install -Dm644 ".output/arch/arm64/boot/dts/$d" "$pkgdir/boot/dtbs-$_flavor/$d"
+	done
+	_make INSTALL_MOD_PATH="$pkgdir" INSTALL_MOD_STRIP=1 modules_install
+	rm -f "$pkgdir"/lib/modules/*/build "$pkgdir"/lib/modules/*/source
+}
+
+sha512sums="
+dadd4045e8425345404b143691d33e28ab90a06c2bdbf857bcba052d1a300a771e1bb31864c69ef390a5a221908f872e4dca84aa68cdb434222d8026f1307b6d  linux-d541cbce7661492598bd5fa548e70865bbc9058a.tar.gz
+"

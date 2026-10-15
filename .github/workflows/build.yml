@@ -1,0 +1,53 @@
+# Check build: the changed packages, signed with a throwaway key, kept as an artifact.
+# Never published. On main the publish workflow builds instead (once the repo is public).
+name: build
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      packages:
+        description: 'package directories (e.g. "device/linux-glassine-sdm660") or "all"'
+        default: all
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: github.ref != 'refs/heads/main' || github.event_name != 'push' || github.event.repository.private
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Select packages
+        id: select
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT: ${{ inputs.packages }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          case "$EVENT" in
+            workflow_dispatch) if [ "$INPUT" = all ]; then p=$(scripts/changed.sh all); else p=$INPUT; fi ;;
+            pull_request) p=$(scripts/changed.sh "$PR_BASE") ;;
+            *) p=$(scripts/changed.sh "$BEFORE") ;;
+          esac
+          p=$(printf "%s" "$p" | tr "\n" " ")
+          echo "packages=$p" >> "$GITHUB_OUTPUT"
+          echo "packages: ${p:-none}"
+      - name: Build
+        if: steps.select.outputs.packages != ''
+        run: scripts/docker-build.sh ${{ steps.select.outputs.packages }}
+      - uses: actions/upload-artifact@v7
+        if: steps.select.outputs.packages != ''
+        with:
+          name: packages-${{ github.sha }}
+          retention-days: 14
+          path: out/

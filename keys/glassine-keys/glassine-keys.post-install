@@ -1,0 +1,5 @@
+#!/bin/sh
+# add the GlassineOS repository once; the line is the one this package ships
+line=$(cat /usr/share/glassine/apk-repository) || exit 0
+grep -qxF "$line" /etc/apk/repositories 2>/dev/null || echo "$line" >> /etc/apk/repositories
+exit 0

@@ -1,0 +1,28 @@
+# Maintainer: Moritz Meißelbach <4208996+Biont@users.noreply.github.com>
+# The public key that signs the GlassineOS package repository, and the repository
+# itself in /etc/apk/repositories. Key rotation: add the new key here first, publish,
+# and sign with it only after devices have it.
+pkgname=glassine-keys
+pkgver=1
+pkgrel=0
+pkgdesc="GlassineOS package repository signing keys"
+url="https://github.com/GlassineOS/packages"
+arch="noarch"
+license="GPL-2.0-or-later"
+options="!check"
+install="$pkgname.post-install $pkgname.post-upgrade $pkgname.pre-deinstall"
+_branch=v3.22
+_keys="glassine-20261015.rsa.pub"
+source="$_keys"
+
+package() {
+	local k
+	for k in $_keys; do
+		install -Dm644 "$srcdir/$k" "$pkgdir/etc/apk/keys/$k"
+	done
+	mkdir -p "$pkgdir"/usr/share/glassine
+	echo "https://pkgs.glassine.org/alpine/$_branch/glassine" > "$pkgdir"/usr/share/glassine/apk-repository
+}
+sha512sums="
+f6883df62468e95bdbd30f79a4bd272f0e3c4c02f2e1f241705eff91d99193f8c74e2884b3502c317f934089717ac2b8907f7398d9d69ca026cdc49745bb1754  glassine-20261015.rsa.pub
+"

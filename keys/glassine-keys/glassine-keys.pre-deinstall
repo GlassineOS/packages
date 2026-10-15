@@ -1,0 +1,6 @@
+#!/bin/sh
+line=$(cat /usr/share/glassine/apk-repository) || exit 0
+[ -f /etc/apk/repositories ] || exit 0
+grep -vxF "$line" /etc/apk/repositories > /etc/apk/repositories.new
+mv /etc/apk/repositories.new /etc/apk/repositories
+exit 0

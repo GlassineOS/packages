@@ -1,0 +1,29 @@
+# Checksum a source archive on a GitHub runner (for sha512sums in an APKBUILD), when
+# the local network is rate-limited by GitHub. Same script as locally.
+name: checksum
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: source URL
+        required: true
+      name:
+        description: 'file name in source= (default: the URL basename)'
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  checksum:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - name: Download, verify, checksum
+        env:
+          URL: ${{ inputs.url }}
+          NAME: ${{ inputs.name }}
+        run: |
+          line=$(scripts/pin-source.sh "$URL" ${NAME:+"$NAME"})
+          echo "$line"
+          { echo "~~~"; echo "$line"; echo "~~~"; } >> "$GITHUB_STEP_SUMMARY"

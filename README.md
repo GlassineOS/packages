@@ -30,7 +30,9 @@ the next Alpine release, the old one gets a `3.22-stable` branch, as in aports.
 builds in a clean `alpine:3.22` container into `out/alpine/v3.22/glassine/<arch>/`,
 signed with a throwaway key unless `ABUILD_PRIVKEY` holds the repository key. On an
 arm64 host the packages are aarch64; elsewhere use an arm64 machine (the kernel takes
-hours under QEMU). `scripts/changed.sh BASE` lists what changed since `BASE`, in build
+hours under QEMU). Pin a source with `scripts/pin-source.sh URL [NAME]` (fails on HTTP
+errors and broken archives; the `checksum` workflow runs it on a GitHub runner when
+GitHub rate-limits your network). `scripts/changed.sh BASE` lists what changed since `BASE`, in build
 order (keys, device, glassine, forks).
 
 ## CI

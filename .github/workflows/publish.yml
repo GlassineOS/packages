@@ -7,6 +7,8 @@ name: publish
 on:
   push:
     branches: [main]
+    # only recipe changes publish (each run waits for an approval)
+    paths: ['keys/**', 'device/**', 'glassine/**', 'forks/**']
   workflow_dispatch:
     inputs:
       packages:

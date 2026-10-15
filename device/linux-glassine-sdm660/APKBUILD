@@ -4,7 +4,7 @@
 pkgname=linux-glassine-sdm660
 pkgver=7.2.3
 # GlassineOS/linux, branch glassine/sdm660-7.2
-_commit=d541cbce7661492598bd5fa548e70865bbc9058a
+_commit=4d1fb16bd1a3ffcf886271bd5cd9a028d93b5450
 pkgrel=0
 _flavor=sdm660
 _fragments="onyx-noteair.config"
@@ -59,5 +59,5 @@ package() {
 }
 
 sha512sums="
-dadd4045e8425345404b143691d33e28ab90a06c2bdbf857bcba052d1a300a771e1bb31864c69ef390a5a221908f872e4dca84aa68cdb434222d8026f1307b6d  linux-d541cbce7661492598bd5fa548e70865bbc9058a.tar.gz
+706389f4bc6a85f843b3851ef1037eada78b22280e4b5b3998dbf4c753697dc74963ae922c13640f2e082ec005eb52e58c2ccc4dc10b094fd4cab5079a01a04d  linux-4d1fb16bd1a3ffcf886271bd5cd9a028d93b5450.tar.gz
 "

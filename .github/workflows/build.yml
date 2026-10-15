@@ -14,8 +14,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  # a push builds only its own changes: never cancel one, only superseded PR runs
+  # a push builds only its own changes: one group per commit, so no push run is ever
+  # cancelled or dropped from the queue; pull requests cancel superseded runs
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

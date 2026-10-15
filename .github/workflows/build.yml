@@ -15,7 +15,8 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # a push builds only its own changes: never cancel one, only superseded PR runs
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:

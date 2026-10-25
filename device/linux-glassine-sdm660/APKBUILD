@@ -2,10 +2,10 @@
 # Kernel for Qualcomm SDM660-family devices, from GlassineOS/linux.
 # Flavor "sdm660": sdm660_defconfig + the device config fragments below.
 pkgname=linux-glassine-sdm660
-pkgver=7.2.3
-# GlassineOS/linux, branch glassine/sdm660-7.2
-_commit=bc1a6b59293c6a091b5ea117e78b80bbba36d536
-pkgrel=1
+pkgver=7.3.0
+# GlassineOS/linux, branch glassine/sdm660-7.3
+_commit=e7990b665ceb16b856fefeebbbb8f0ae0d5f2d7c
+pkgrel=0
 _flavor=sdm660
 _fragments="onyx-noteair.config"
 _dtbs="qcom/sdm636-onyx-noteair.dtb"
@@ -59,5 +59,5 @@ package() {
 }
 
 sha512sums="
-be6e0696da61720b728a86615851df839eb72f950569c5b4211dfe41e046339b90c993122fc99c01345c9f20c76a02d45907a89dc23b168493884b7289b49552  linux-bc1a6b59293c6a091b5ea117e78b80bbba36d536.tar.gz
+3eb579346ac96c66098e330afcefe040cc3b5902e5387a9dfecc178bdc651d8df89d3dbd11fa8814b16b9777b741266287318ca95275432d0772187b0b1b7ee0  linux-e7990b665ceb16b856fefeebbbb8f0ae0d5f2d7c.tar.gz
 "

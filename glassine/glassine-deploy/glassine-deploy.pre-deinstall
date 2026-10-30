@@ -1,0 +1,4 @@
+#!/bin/sh
+rc-update del glassine-switch shutdown >/dev/null 2>&1
+rc-update del glassine-deploy-accept default >/dev/null 2>&1
+exit 0

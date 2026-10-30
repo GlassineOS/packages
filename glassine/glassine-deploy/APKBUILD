@@ -1,0 +1,41 @@
+# Maintainer: Moritz Meißelbach <moritz@glassine.org>
+# glassine-deploy from GlassineOS/boot: the deployments tool, the shutdown switch, the
+# boot-success step and hibernation. The device package provides
+# /etc/glassine/deploy.conf. The formats and exit codes are in boot's docs/deployments.md.
+pkgname=glassine-deploy
+pkgver=0.1.0
+# GlassineOS/boot main
+_commit=266faf337e52818d96c3e8e613b37fc21211f403
+pkgrel=0
+pkgdesc="GlassineOS deployments: read-only bases, tried updates, reset, hibernation"
+url="https://github.com/GlassineOS/boot"
+arch="noarch"
+license="GPL-2.0-or-later"
+# debugfs and filefrag are in e2fsprogs-extra; ash, flock, awk and blkid in busybox
+depends="busybox e2fsprogs e2fsprogs-extra openrc"
+# the tests need privileged Docker (real btrfs and overlayfs); they run in boot's CI
+options="!check"
+subpackages="$pkgname-doc"
+install="$pkgname.post-install $pkgname.pre-deinstall"
+source="boot-$_commit.tar.gz::https://github.com/GlassineOS/boot/archive/$_commit.tar.gz"
+builddir="$srcdir/boot-$_commit"
+
+package() {
+	local f
+	for f in glassine-deploy glassine-deploy-accept glassine-switch-hook glassine-hibernate; do
+		install -Dm755 sbin/$f "$pkgdir"/usr/sbin/$f
+	done
+	for f in glassine-switch glassine-deploy-accept; do
+		install -Dm755 openrc/$f "$pkgdir"/etc/init.d/$f
+	done
+	for f in glassine-state.sh glassine-root.sh; do
+		install -Dm644 lib/$f "$pkgdir"/usr/lib/glassine-boot/$f
+	done
+	install -Dm644 conf/deploy.conf.example "$pkgdir"/usr/share/glassine-boot/deploy.conf.example
+	install -Dm644 docs/deployments.md "$pkgdir"/usr/share/doc/$pkgname/deployments.md
+	# the accept step runs the same health checks as a kernel test boot (ACCEPT_HEALTH_DIR)
+	install -d "$pkgdir"/etc/glassine-bootimg/health.d "$pkgdir"/etc/glassine/hibernate.d
+}
+sha512sums="
+233393bdb45efb1da1d144eb4876937a76d157ba60523a0cd89cab7f77a55cefee09da8477be5de34f7d711a9f634ebb30408eeb2d9e2ed70e95bb536c2455da  boot-266faf337e52818d96c3e8e613b37fc21211f403.tar.gz
+"

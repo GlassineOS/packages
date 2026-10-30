@@ -1,0 +1,5 @@
+#!/bin/sh
+# the switch runs at shutdown, the accept step after a healthy boot
+rc-update add glassine-switch shutdown >/dev/null 2>&1
+rc-update add glassine-deploy-accept default >/dev/null 2>&1
+exit 0

@@ -4,3 +4,6 @@ jobs:
   safety:
     uses: GlassineOS/.github/.github/workflows/safety-scan.yml@main
     secrets: inherit
+  org-sync:
+    uses: GlassineOS/.github/.github/workflows/org-sync.yml@main
+    secrets: inherit

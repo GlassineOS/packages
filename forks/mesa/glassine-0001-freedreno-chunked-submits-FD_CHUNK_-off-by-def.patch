@@ -1,0 +1,1188 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Moritz=20Mei=C3=9Felbach?= <moritz@glassine.org>
+Date: Thu, 5 Nov 2026 20:38:49 +0100
+Subject: [PATCH 1/6] freedreno: chunked submits (FD_CHUNK_*), off by default
+
+A long sysmem batch is cut into several kernel submits (chunks), so the CP
+has a yield point every few GPU-ms and a high-priority ring (the e-ink panel
+engine's) gets the GPU within one chunk instead of within one app frame.
+
+- fd_ringbuffer_split() closes the current cmd of a growable ring and marks
+  it as the end of a submit group; msm's submit path starts a new ioctl
+  after each marked cmd.
+- FD_CHUNK_US / FD_CHUNK_DRAWS / FD_CHUNK_COST: when to cut (an estimate of
+  the open chunk's GPU time, a draw count, or both).
+- FD_CHUNK_ADAPT (on with FD_CHUNK_US): GPU timestamps around chunks and
+  whole batches scale the estimate per context, so a chunk is about
+  FD_CHUNK_US of GPU time whatever the app's draws cost.
+- FD_CHUNK_BUSY: a context cuts only while its own GPU work fills most of
+  the wall time; a light app leaves gaps the other ring uses anyway.
+- FD_CHUNK_NOMERGE=1: one ioctl per gallium batch, no merging of deferred
+  submits.
+
+Without FD_CHUNK_* nothing changes.
+
+Assisted-by: Claude Opus 5.5 (unreviewed; tested only on the A509)
+---
+ src/freedreno/drm/freedreno_ringbuffer.h      |  44 +++
+ src/freedreno/drm/freedreno_ringbuffer_sp.c   |  48 +++
+ src/freedreno/drm/freedreno_ringbuffer_sp.h   |   6 +
+ src/freedreno/drm/msm/msm_ringbuffer_sp.c     |  91 ++++-
+ src/gallium/drivers/freedreno/a5xx/fd5_gmem.c |  33 +-
+ .../drivers/freedreno/freedreno_batch.c       | 342 ++++++++++++++++++
+ .../drivers/freedreno/freedreno_batch.h       |  48 +++
+ .../drivers/freedreno/freedreno_context.c     |  25 +-
+ .../drivers/freedreno/freedreno_context.h     |  32 ++
+ .../drivers/freedreno/freedreno_draw.c        |   6 +
+ .../drivers/freedreno/freedreno_gmem.c        |  72 +++-
+ .../drivers/freedreno/freedreno_screen.c      |  40 ++
+ .../drivers/freedreno/freedreno_util.h        |  53 +++
+ 13 files changed, 820 insertions(+), 20 deletions(-)
+
+diff --git a/src/freedreno/drm/freedreno_ringbuffer.h b/src/freedreno/drm/freedreno_ringbuffer.h
+index 8962699f0ec..bf8ec9c8743 100644
+--- a/src/freedreno/drm/freedreno_ringbuffer.h
++++ b/src/freedreno/drm/freedreno_ringbuffer.h
+@@ -106,6 +106,26 @@ struct fd_ringbuffer_funcs {
+    uint32_t (*cmd_count)(struct fd_ringbuffer *ring);
+    bool (*check_size)(struct fd_ringbuffer *ring);
+    void (*destroy)(struct fd_ringbuffer *ring);
++
++   /**
++    * chunked submits: close the current cmdstream buffer of a
++    * growable ring and start a new one, so that cmd_count() grows by one
++    * and the two parts can be referenced (emit_reloc_ring) or submitted
++    * separately.  On a FD_RINGBUFFER_PRIMARY ring the boundary also marks
++    * a kernel-submit boundary: the backend issues one ioctl per group of
++    * cmds, which gives the CP a yield point between them.  Optional (NULL
++    * if the backend does not support it).
++    */
++   void (*split)(struct fd_ringbuffer *ring);
++
++   /**
++    * chunked submits: size in bytes of cmd `cmd_idx` of a growable ring (the open,
++    * unfinished cmd included) and whether a split() boundary follows it.
++    * A growable ring also starts a new cmd whenever a buffer fills up
++    * (grow); only the split() boundaries are chunk boundaries.  Optional.
++    */
++   uint32_t (*cmd_info)(struct fd_ringbuffer *ring, uint32_t cmd_idx,
++                        bool *split_after);
+ };
+ 
+ /* the ringbuffer object is not opaque so that OUT_RING() type stuff
+@@ -183,6 +203,30 @@ fd_ringbuffer_check_size(struct fd_ringbuffer *ring)
+    return ring->funcs->check_size(ring);
+ }
+ 
++/* chunked submits: see fd_ringbuffer_funcs::split.  Returns false if unsupported. */
++static inline bool
++fd_ringbuffer_split(struct fd_ringbuffer *ring)
++{
++   if (!ring->funcs->split || !(ring->flags & FD_RINGBUFFER_GROWABLE))
++      return false;
++   ring->funcs->split(ring);
++   return true;
++}
++
++/* chunked submits: see fd_ringbuffer_funcs::cmd_info.  Without backend support the
++ * cmd counts as non-empty and not followed by a split.
++ */
++static inline uint32_t
++fd_ringbuffer_cmd_info(struct fd_ringbuffer *ring, uint32_t cmd_idx,
++                       bool *split_after)
++{
++   if (!ring->funcs->cmd_info) {
++      *split_after = false;
++      return ~0u;
++   }
++   return ring->funcs->cmd_info(ring, cmd_idx, split_after);
++}
++
+ static inline void
+ fd_ringbuffer_emit(struct fd_ringbuffer *ring, uint32_t data)
+ {
+diff --git a/src/freedreno/drm/freedreno_ringbuffer_sp.c b/src/freedreno/drm/freedreno_ringbuffer_sp.c
+index 7f50fccba80..235ffc55a8b 100644
+--- a/src/freedreno/drm/freedreno_ringbuffer_sp.c
++++ b/src/freedreno/drm/freedreno_ringbuffer_sp.c
+@@ -504,6 +504,7 @@ finalize_current_cmd(struct fd_ringbuffer *ring)
+           (struct fd_cmd_sp){
+              .ring_bo = fd_bo_ref(fd_ring->ring_bo),
+              .size = offset_bytes(ring->cur, ring->start),
++             .split_after = false,
+           });
+ }
+ 
+@@ -526,6 +527,49 @@ fd_ringbuffer_sp_grow(struct fd_ringbuffer *ring, uint32_t size)
+    ring->size = size;
+ }
+ 
++/* chunked submits: like grow, but the closed cmd is marked as the end of a submit
++ * group.  An empty current cmd is not closed (nothing to split).
++ */
++static void
++fd_ringbuffer_sp_split(struct fd_ringbuffer *ring)
++{
++   struct fd_ringbuffer_sp *fd_ring = to_fd_ringbuffer_sp(ring);
++
++   assert(ring->flags & FD_RINGBUFFER_GROWABLE);
++   assert(!(ring->flags & _FD_RINGBUFFER_OBJECT));
++
++   if (ring->cur == ring->start) {
++      /* mark the previous cmd instead, if there is one: */
++      if (fd_ring->u.nr_cmds)
++         fd_ring->u.cmds[fd_ring->u.nr_cmds - 1].split_after = true;
++      return;
++   }
++
++   fd_ringbuffer_sp_grow(ring, ring->size);
++   fd_ring->u.cmds[fd_ring->u.nr_cmds - 1].split_after = true;
++}
++
++/* chunked submits: see fd_ringbuffer_funcs::cmd_info.  Same cmd addressing as
++ * find_target_bo(): cmd_idx == nr_cmds is the open cmd.
++ */
++static uint32_t
++fd_ringbuffer_sp_cmd_info(struct fd_ringbuffer *ring, uint32_t cmd_idx,
++                          bool *split_after)
++{
++   struct fd_ringbuffer_sp *fd_ring = to_fd_ringbuffer_sp(ring);
++
++   assert(!(ring->flags & _FD_RINGBUFFER_OBJECT));
++
++   if ((ring->flags & FD_RINGBUFFER_GROWABLE) &&
++       (cmd_idx < fd_ring->u.nr_cmds)) {
++      *split_after = fd_ring->u.cmds[cmd_idx].split_after;
++      return fd_ring->u.cmds[cmd_idx].size;
++   }
++
++   *split_after = false;
++   return offset_bytes(ring->cur, ring->start);
++}
++
+ static inline bool
+ fd_ringbuffer_references_bo(struct fd_ringbuffer *ring, struct fd_bo *bo)
+ {
+@@ -755,6 +799,8 @@ static const struct fd_ringbuffer_funcs ring_funcs_nonobj_32 = {
+    .cmd_count = fd_ringbuffer_sp_cmd_count,
+    .check_size = fd_ringbuffer_sp_check_size,
+    .destroy = fd_ringbuffer_sp_destroy,
++   .split = fd_ringbuffer_sp_split,
++   .cmd_info = fd_ringbuffer_sp_cmd_info,
+ };
+ 
+ static const struct fd_ringbuffer_funcs ring_funcs_obj_32 = {
+@@ -778,6 +824,8 @@ static const struct fd_ringbuffer_funcs ring_funcs_nonobj_64 = {
+    .cmd_count = fd_ringbuffer_sp_cmd_count,
+    .check_size = fd_ringbuffer_sp_check_size,
+    .destroy = fd_ringbuffer_sp_destroy,
++   .split = fd_ringbuffer_sp_split,
++   .cmd_info = fd_ringbuffer_sp_cmd_info,
+ };
+ 
+ static const struct fd_ringbuffer_funcs ring_funcs_obj_64 = {
+diff --git a/src/freedreno/drm/freedreno_ringbuffer_sp.h b/src/freedreno/drm/freedreno_ringbuffer_sp.h
+index 27d1873d338..c9304515366 100644
+--- a/src/freedreno/drm/freedreno_ringbuffer_sp.h
++++ b/src/freedreno/drm/freedreno_ringbuffer_sp.h
+@@ -81,6 +81,12 @@ FD_DEFINE_CAST(fd_submit, fd_submit_sp);
+ struct fd_cmd_sp {
+    struct fd_bo *ring_bo;
+    unsigned size;
++   /* chunked submits: this cmd was closed by fd_ringbuffer_split(), not by a grow.
++    * On the primary ring the kernel backend starts a new ioctl after it;
++    * on an IB2 ring the gallium driver reads it back (cmd_info) to tell a
++    * chunk boundary from a buffer that merely filled up.
++    */
++   bool split_after;
+ };
+ 
+ struct fd_ringbuffer_sp {
+diff --git a/src/freedreno/drm/msm/msm_ringbuffer_sp.c b/src/freedreno/drm/msm/msm_ringbuffer_sp.c
+index d2608a12288..c7ae1adafcd 100644
+--- a/src/freedreno/drm/msm/msm_ringbuffer_sp.c
++++ b/src/freedreno/drm/msm/msm_ringbuffer_sp.c
+@@ -12,10 +12,28 @@
+ 
+ #include "util/os_file.h"
+ 
++#include "util/u_debug.h"
++
+ #include "drm/freedreno_ringbuffer_sp.h"
+ #include "freedreno_rd_output.h"
+ #include "msm_priv.h"
+ 
++/* chunked submits: FD_CHUNK_NOMERGE=1 makes every deferred submit
++ * (= every gallium batch) its own ioctl instead of merging them into one.
++ * Merged submits run as one GPU job (the kernel yields only at the end of a
++ * submit), so with FD_MESA_DEBUG=flush the merged offscreen batches were
++ * still 20-30 ms jobs on the A509.  The CPU-side
++ * batching of the ioctls (one wakeup of the submit thread) is kept.
++ */
++static bool
++chunk_nomerge(void)
++{
++   static int val = -1;
++   if (val < 0)
++      val = debug_get_bool_option("FD_CHUNK_NOMERGE", false) ? 1 : 0;
++   return val;
++}
++
+ static int
+ flush_submit_list(struct list_head *submit_list)
+ {
+@@ -26,7 +44,7 @@ flush_submit_list(struct list_head *submit_list)
+       .flags = msm_pipe->pipe,
+       .queueid = msm_pipe->queue_id,
+    };
+-   int ret;
++   int ret = 0;
+ 
+    unsigned nr_cmds = 0;
+ 
+@@ -41,6 +59,9 @@ flush_submit_list(struct list_head *submit_list)
+    }
+ 
+    struct drm_msm_gem_submit_cmd cmds[nr_cmds];
++   /* chunked submits: split_after[i] -> a new ioctl starts after cmds[i] */
++   bool split_after[nr_cmds];
++   unsigned nr_groups = 1;
+ 
+    unsigned cmd_idx = 0;
+ 
+@@ -60,6 +81,12 @@ flush_submit_list(struct list_head *submit_list)
+          cmds[cmd_idx].pad = 0;
+          cmds[cmd_idx].nr_relocs = 0;
+ 
++         /* chunked submits: a split inside the batch, or (FD_CHUNK_NOMERGE) the end
++          * of this deferred submit:
++          */
++         bool last_of_submit = (i == deferred_primary->u.nr_cmds - 1);
++         split_after[cmd_idx] = deferred_primary->u.cmds[i].split_after ||
++                                (last_of_submit && chunk_nomerge());
+          cmd_idx++;
+       }
+ 
+@@ -124,22 +151,54 @@ flush_submit_list(struct list_head *submit_list)
+ 
+    req.bos = VOID2U64(submit_bos);
+    req.nr_bos = fd_submit->nr_bos;
+-   req.cmds = VOID2U64(cmds);
+-   req.nr_cmds = nr_cmds;
+-
+-   DEBUG_MSG("nr_cmds=%u, nr_bos=%u", req.nr_cmds, req.nr_bos);
+-
+-   ret = drmCommandWriteRead(pipe->dev->fd, DRM_MSM_GEM_SUBMIT, &req,
+-                             sizeof(req));
+-   if (ret) {
+-      ERROR_MSG("submit failed: %d (%s)", ret, strerror(errno));
+-      msm_dump_submit(&req);
+-   } else if (!ret) {
+-      fd_submit->out_fence->kfence = req.fence;
+-      fd_submit->out_fence->fence_fd = req.fence_fd;
+-   }
+ 
+-   msm_dump_rd(pipe, &req);
++   /* chunked submits: the last cmd never starts a new group; count the groups. */
++   if (nr_cmds)
++      split_after[nr_cmds - 1] = false;
++   for (unsigned i = 0; i < nr_cmds; i++)
++      nr_groups += split_after[i];
++
++   /* One ioctl per group, all on the same submitqueue (so in order, and
++    * the kernel's own fences stay monotonic).  Every group lists the whole
++    * bo table: simpler than tracking per-group use, and the implicit-sync
++    * fences it adds are redundant, not wrong.  The in-fence gates only the
++    * first group (the later ones follow it on the queue anyway); the
++    * out-fence is the last group's.
++    */
++   unsigned first = 0;
++   for (unsigned g = 0; g < nr_groups && !ret; g++) {
++      unsigned last = first;
++      while (last + 1 < nr_cmds && !split_after[last])
++         last++;
++
++      struct drm_msm_gem_submit greq = req;
++      greq.cmds = VOID2U64(&cmds[first]);
++      greq.nr_cmds = nr_cmds ? last - first + 1 : 0;
++      if (g > 0) {
++         greq.flags &= ~MSM_SUBMIT_FENCE_FD_IN;
++         greq.fence_fd = 0;
++      }
++      if (g + 1 < nr_groups)
++         greq.flags &= ~MSM_SUBMIT_FENCE_FD_OUT;
++
++      DEBUG_MSG("nr_cmds=%u, nr_bos=%u (group %u/%u)", greq.nr_cmds,
++                greq.nr_bos, g + 1, nr_groups);
++
++      ret = drmCommandWriteRead(pipe->dev->fd, DRM_MSM_GEM_SUBMIT, &greq,
++                                sizeof(greq));
++      if (ret) {
++         ERROR_MSG("submit failed: %d (%s)", ret, strerror(errno));
++         msm_dump_submit(&greq);
++      } else {
++         fd_submit->out_fence->kfence = greq.fence;
++         if (g + 1 == nr_groups)
++            fd_submit->out_fence->fence_fd = greq.fence_fd;
++      }
++
++      msm_dump_rd(pipe, &greq);
++
++      first = last + 1;
++   }
+ 
+    if (!bos_on_stack)
+       free(submit_bos);
+diff --git a/src/gallium/drivers/freedreno/a5xx/fd5_gmem.c b/src/gallium/drivers/freedreno/a5xx/fd5_gmem.c
+index 2f4a9e2a097..b6407fee0ef 100644
+--- a/src/gallium/drivers/freedreno/a5xx/fd5_gmem.c
++++ b/src/gallium/drivers/freedreno/a5xx/fd5_gmem.c
+@@ -695,6 +695,24 @@ fd5_emit_tile_fini(struct fd_batch *batch) assert_dt
+    fd5_set_render_mode(batch->ctx, ring, BYPASS);
+ }
+ 
++/* FD_CHUNK_ADAPT: a 64-bit GPU timestamp (the 19.2 MHz always-on
++ * counter, as the timestamp queries use it: fd5_query.c timestamp_resume)
++ * into ctx->chunk_adapt.bo at `offset`.  RB_DONE_TS is written once the RB
++ * has retired everything before it.  5 dwords.
++ */
++static void
++fd5_emit_chunk_ts(struct fd_batch *batch, struct fd_ringbuffer *ring,
++                  uint32_t offset)
++{
++   OUT_PKT7(ring, CP_EVENT_WRITE, 4);
++   OUT_RING(ring,
++            CP_EVENT_WRITE_0_EVENT(RB_DONE_TS) | CP_EVENT_WRITE_0_TIMESTAMP);
++   OUT_RELOC(ring, batch->ctx->chunk_adapt.bo, offset, 0, 0);
++   OUT_RING(ring, 0x00000000);
++
++   fd_reset_wfi(batch);
++}
++
+ static void
+ fd5_emit_sysmem_prep(struct fd_batch *batch) assert_dt
+ {
+@@ -705,7 +723,8 @@ fd5_emit_sysmem_prep(struct fd_batch *batch) assert_dt
+ 
+    fd5_emit_lrz_flush(batch, ring);
+ 
+-   if (batch->prologue)
++   /* chunked submits: the prologue (LRZ clear) runs once, before the first chunk */
++   if (batch->prologue && batch->chunk_idx == 0)
+       fd5_emit_ib(ring, batch->prologue);
+ 
+    OUT_PKT7(ring, CP_SKIP_IB2_ENABLE_GLOBAL, 1);
+@@ -760,6 +779,12 @@ fd5_emit_sysmem_prep(struct fd_batch *batch) assert_dt
+    emit_zs(ring, &pfb->zsbuf, NULL);
+    emit_mrt(ring, pfb->nr_cbufs, pfb->cbufs, NULL);
+    emit_msaa(ring, pfb->samples);
++
++   /* FD_CHUNK_ADAPT: start stamp of the measured segment, after
++    * the whole prep (its WFI makes this the point the draws start):
++    */
++   if (batch->chunk_ts_off != ~0u)
++      fd5_emit_chunk_ts(batch, ring, batch->chunk_ts_off);
+ }
+ 
+ static void
+@@ -767,6 +792,12 @@ fd5_emit_sysmem_fini(struct fd_batch *batch)
+ {
+    struct fd_ringbuffer *ring = batch->gmem;
+ 
++   /* FD_CHUNK_ADAPT: end stamp, written when the RB has finished
++    * the segment's draws, before the CCU flushes below:
++    */
++   if (batch->chunk_ts_off != ~0u)
++      fd5_emit_chunk_ts(batch, ring, batch->chunk_ts_off + sizeof(uint64_t));
++
+    OUT_PKT7(ring, CP_SKIP_IB2_ENABLE_GLOBAL, 1);
+    OUT_RING(ring, 0x0);
+ 
+diff --git a/src/gallium/drivers/freedreno/freedreno_batch.c b/src/gallium/drivers/freedreno/freedreno_batch.c
+index 22172e576cc..61be19b5cba 100644
+--- a/src/gallium/drivers/freedreno/freedreno_batch.c
++++ b/src/gallium/drivers/freedreno/freedreno_batch.c
+@@ -7,6 +7,7 @@
+  */
+ 
+ #include "util/hash_table.h"
++#include "util/os_time.h"
+ #include "util/list.h"
+ #include "util/set.h"
+ #include "util/u_string.h"
+@@ -110,6 +111,10 @@ fd_batch_create(struct fd_context *ctx, bool nondraw)
+    batch->in_fence_fd = -1;
+    batch->fence = NULL;
+ 
++   /* chunked submits: no timestamp slot until the flush takes one */
++   batch->chunk_ts_off = ~0u;
++   util_dynarray_init(&batch->chunk_est, NULL);
++
+    /* Work around problems on earlier gens with submit merging, etc,
+     * by always creating a fence to request that the submit is flushed
+     * immediately:
+@@ -291,6 +296,7 @@ __fd_batch_destroy_locked(struct fd_batch *batch)
+ 
+    util_dynarray_fini(&batch->draw_patches);
+    util_dynarray_fini(&(batch->fb_read_patches));
++   util_dynarray_fini(&batch->chunk_est); /* chunked submits */
+ 
+    if (is_a2xx(batch->ctx->screen)) {
+       util_dynarray_fini(&batch->shader_patches);
+@@ -627,6 +633,342 @@ fd_batch_check_size(struct fd_batch *batch)
+       fd_batch_flush(batch);
+ }
+ 
++/* chunked submits: chunked submits.
++ *
++ * A chunk boundary is a batch boundary as far as the GPU is concerned: the
++ * current chunk ends with the gen's sysmem_fini (CCU flush), the next one
++ * starts with sysmem_prep (fd5_emit_restore: render mode, UCHE invalidate,
++ * the per-batch invariants, the render target) and the next draw re-emits
++ * the complete draw state (fd_context_all_dirty), exactly as the first draw
++ * of a fresh batch does.  So no GPU state is assumed to survive the yield
++ * point between two chunks, whatever ran on the GPU in between.
++ *
++ * What does carry over is the batch's CPU-side bookkeeping: one submit,
++ * one fence, one resource-tracking set, one framebuffer state.  That is the
++ * saving against FD_MESA_DEBUG=flush, which ends a batch per draw and pays
++ * the batch machinery, the dependency flushes and (in GMEM) a tile resolve
++ * for every draw.
++ */
++static bool
++chunk_can_cut(struct fd_batch *batch) assert_dt
++{
++   struct fd_context *ctx = batch->ctx;
++
++   /* only the a5xx sysmem path has been looked at: */
++   if (ctx->screen->gen != 5)
++      return false;
++
++   if (batch->nondraw)
++      return false;
++
++   /* the open chunk must hold at least one draw: */
++   if (batch->chunk_draws == 0)
++      return false;
++
++   /* a hw query (occlusion, timestamp) spanning the cut would get its
++    * start and end samples from different IB2 cmds; the sample bookkeeping
++    * is per batch, so stay in one chunk while any is active:
++    */
++   if (batch->query_providers_active)
++      return false;
++   if (!list_is_empty(&ctx->acc_active_queries))
++      return false;
++
++   /* streamout offsets are tracked per draw; keep it simple: */
++   if (ctx->streamout.num_targets > 0)
++      return false;
++
++   if (!(batch->draw->flags & FD_RINGBUFFER_GROWABLE))
++      return false;
++
++   return true;
++}
++
++/* FD_CHUNK_ADAPT: self-calibration of the cost estimate.
++ *
++ * FD_CHUNK_COST is a fixed ns-per-draw + ps-per-vertex model, and real draw
++ * cost differs ~10x between apps (OpenMW 0.51's heavy draws vs 0.47's cheap
++ * ones): one constant either cuts a light app into
++ * 0.3 ms chunks (every cut pays prep/fini + an ioctl) or lets a heavy one
++ * run 20 ms chunks.  So the estimate is scaled per context by what the GPU
++ * actually took:
++ *
++ *  - Every measured segment -- a chunk, or a whole batch that was never cut
++ *    (so the estimator learns before the first cut) -- gets a slot in a
++ *    small ring bo.  The gen's sysmem_prep writes a GPU timestamp (the
++ *    19.2 MHz always-on counter, CP_EVENT_WRITE RB_DONE_TS|TIMESTAMP, as the
++ *    timestamp queries do) into slot.start after its own setup, sysmem_fini
++ *    writes slot.end before its CCU flushes: measured = the draw work.
++ *  - The CPU never waits.  A slot is pre-filled with ~0 (the counter's high
++ *    dword can't be 0xffffffff), and consumed in order only once both
++ *    stamps are written; the oldest unwritten slot stops the walk.  A full
++ *    ring (the GPU is far behind) just skips measuring the segment.
++ *  - scale = EWMA of measured / estimated in the log2 domain (ratios), rate
++ *    1/8 weighted by the segment's length so a batch of two tiny draws
++ *    moves it little; clamped to [0.1, 20].  Starts at 1 = the FD_CHUNK_COST
++ *    value.  Outlier samples (end <= start, torn read, > 1 s) are dropped.
++ *  - The cut decision uses estimate x scale, and never cuts an open chunk
++ *    whose scaled estimate is below half the budget (one over-estimated
++ *    big draw must not make two half-chunks).
++ */
++#define CHUNK_ADAPT_SLOTS 512 /* x 16 B = 8 KB bo */
++#define CHUNK_ADAPT_RATE 0.125f
++#define CHUNK_SCALE_MIN 0.1f
++#define CHUNK_SCALE_MAX 20.0f
++
++static void
++chunk_adapt_sample(struct fd_chunk_adapt *ad, uint32_t est_ns, uint64_t meas_ns)
++{
++   float budget_ns = (float)fd_chunk.budget_us * 1000.0f;
++   float r = (float)meas_ns / (float)est_ns;
++
++   r = CLAMP(r, 1.0f / 64.0f, 64.0f);
++
++   /* a segment of ~budget/2 or longer counts fully; a tiny one 1/16: */
++   float w = CLAMP((float)meas_ns / (0.5f * budget_ns), 1.0f / 16.0f, 1.0f);
++
++   ad->log2_scale += CHUNK_ADAPT_RATE * w * (log2f(r) - ad->log2_scale);
++   ad->log2_scale = CLAMP(ad->log2_scale, log2f(CHUNK_SCALE_MIN),
++                          log2f(CHUNK_SCALE_MAX));
++   ad->scale = exp2f(ad->log2_scale);
++
++   ad->samples++;
++   ad->meas_ns += meas_ns;
++   ad->est_ns += est_ns;
++}
++
++/* One stamp of a slot, ~0 if not written yet.  The slot is pre-filled with
++ * ~0 and the counter's high dword is never 0xffffffff, so a half-written
++ * (torn) read of the high dword also reads as "not yet".
++ */
++static inline uint64_t
++chunk_ts_read(struct fd_chunk_adapt *ad, unsigned slot, unsigned which)
++{
++   volatile uint64_t *ts = ad->map + slot * 2 + which;
++   uint64_t v = *ts;
++   return ((v >> 32) == 0xffffffffu) ? ~0ull : v;
++}
++
++/* Read back the finished slots (no wait: stop at the first unwritten). */
++static void
++chunk_adapt_consume(struct fd_context *ctx) assert_dt
++{
++   struct fd_chunk_adapt *ad = &ctx->chunk_adapt;
++
++   while (ad->tail != ad->head) {
++      unsigned slot = ad->tail % ad->nr_slots;
++      uint64_t start = chunk_ts_read(ad, slot, 0);
++      uint64_t end = chunk_ts_read(ad, slot, 1);
++
++      if (start == ~0ull || end == ~0ull) {
++         /* Not written yet -- unless a later slot already is: segments run
++          * in flush order on one submitqueue, so then this one's stamps
++          * were lost (GPU hang / reset) and would block the walk forever.
++          */
++         if (ad->tail + 1 != ad->head) {
++            unsigned next = (ad->tail + 1) % ad->nr_slots;
++            if (chunk_ts_read(ad, next, 0) != ~0ull &&
++                chunk_ts_read(ad, next, 1) != ~0ull) {
++               ad->tail++;
++               ad->bad++;
++               continue;
++            }
++         }
++         break;
++      }
++
++      ad->tail++;
++
++      /* end <= start or > 1 s (19.2 MHz ticks): torn read or garbage */
++      if (end <= start || end - start > 19200000ull) {
++         ad->bad++;
++         continue;
++      }
++
++      chunk_adapt_sample(ad, ad->rec[slot], ticks_to_ns(end - start));
++   }
++}
++
++static float
++chunk_scale(struct fd_context *ctx) assert_dt
++{
++   if (!fd_chunk.adapt || !ctx->chunk_adapt.samples)
++      return 1.0f;
++   return ctx->chunk_adapt.scale;
++}
++
++void
++fd_batch_chunk_ts_begin(struct fd_batch *batch, unsigned idx)
++{
++   struct fd_context *ctx = batch->ctx;
++   struct fd_chunk_adapt *ad = &ctx->chunk_adapt;
++   uint32_t est_ns = fd_batch_chunk_est_ns(batch, idx);
++
++   batch->chunk_ts_off = ~0u;
++
++   /* only the a5xx sysmem prep/fini emit the stamps; a segment with no
++    * accounted draw (clears only) teaches nothing:
++    */
++   if (!fd_chunk.adapt || ctx->screen->gen != 5 || batch->nondraw || !est_ns)
++      return;
++   if (ad->failed)
++      return;
++
++   if (!ad->bo) {
++      ad->nr_slots = CHUNK_ADAPT_SLOTS;
++      ad->bo = fd_bo_new(ctx->screen->dev, ad->nr_slots * 2 * sizeof(uint64_t),
++                         0, "chunk_ts");
++      ad->map = ad->bo ? fd_bo_map(ad->bo) : NULL;
++      ad->rec = ad->map ? calloc(ad->nr_slots, sizeof(uint32_t)) : NULL;
++      if (!ad->rec) {
++         if (ad->bo)
++            fd_bo_del(ad->bo);
++         ad->bo = NULL;
++         ad->map = NULL;
++         ad->failed = true;
++         mesa_logw("freedreno: chunked submits: no timestamp bo, adaptation off");
++         return;
++      }
++      memset(ad->map, 0xff, ad->nr_slots * 2 * sizeof(uint64_t));
++      ad->log2_scale = 0.0f;
++      ad->scale = 1.0f;
++   }
++
++   chunk_adapt_consume(ctx);
++
++   if (ad->head - ad->tail >= ad->nr_slots) {
++      ad->skipped++;
++      return;
++   }
++
++   unsigned slot = ad->head % ad->nr_slots;
++   /* consumed slots have both stamps written, so the GPU is done with it: */
++   ad->map[slot * 2] = ~0ull;
++   ad->map[slot * 2 + 1] = ~0ull;
++   ad->rec[slot] = est_ns;
++   ad->head++;
++
++   batch->chunk_ts_off = slot * 2 * sizeof(uint64_t);
++}
++
++void
++fd_batch_chunk_draw(struct fd_batch *batch, const struct pipe_draw_info *info,
++                    const struct pipe_draw_indirect_info *indirect,
++                    const struct pipe_draw_start_count_bias *draws,
++                    unsigned num_draws)
++{
++   struct fd_context *ctx = batch->ctx;
++   uint64_t verts = 0;
++
++   /* The cost estimate: a fixed cost per draw plus a per-vertex cost.
++    * Fragment work is not modelled (coverage is unknown here); the budget
++    * is a soft bound, FD_CHUNK_COST sets the model and FD_CHUNK_ADAPT
++    * scales it by what the GPU measured (see above).
++    */
++   if (!indirect) {
++      for (unsigned i = 0; i < num_draws; i++)
++         verts += draws[i].count;
++      verts *= MAX2(info->instance_count, 1);
++   }
++   uint64_t cost_ns = (uint64_t)fd_chunk.draw_ns * num_draws +
++                      (verts * fd_chunk.vert_ps) / 1000;
++   cost_ns = MIN2(cost_ns, UINT32_MAX / 2);
++
++   /* first draw of a batch: pick up finished measurements */
++   if (fd_chunk.adapt && batch->chunk_draws == 0 && ctx->chunk_adapt.bo)
++      chunk_adapt_consume(ctx);
++
++   bool cut = false;
++   /* FD_CHUNK_BUSY: a light context doesn't cut on the budget at all */
++   if (fd_chunk.budget_us && !ctx->chunk_adapt.gate_closed) {
++      float scale = chunk_scale(ctx);
++      float budget_ns = (float)fd_chunk.budget_us * 1000.0f;
++      float open_ns = (float)batch->chunk_cost_ns * scale;
++
++      if (open_ns + (float)cost_ns * scale > budget_ns &&
++          (!fd_chunk.adapt || open_ns >= 0.5f * budget_ns))
++         cut = true;
++   }
++   if (fd_chunk.max_draws && batch->chunk_draws + num_draws > fd_chunk.max_draws)
++      cut = true;
++
++   if (cut && chunk_can_cut(batch) && fd_ringbuffer_split(batch->draw)) {
++      if (!batch->chunked) {
++         batch->chunked = true;
++         batch->num_chunks = 1;
++         ctx->stats.batch_chunked++;
++      }
++      batch->num_chunks++;
++      ctx->stats.chunks++;
++      /* remember the closed chunk's estimate for the flush's measurement */
++      uint32_t *est = util_dynarray_grow(&batch->chunk_est, uint32_t, 1);
++      *est = batch->chunk_cost_ns;
++      batch->chunk_cost_ns = 0;
++      batch->chunk_draws = 0;
++
++      /* the next draw starts a new IB2 cmd: emit all state again */
++      fd_context_all_dirty(ctx);
++
++      if (fd_chunk.adapt && ctx->chunk_adapt.bo)
++         chunk_adapt_consume(ctx);
++   }
++
++   batch->chunk_cost_ns += cost_ns;
++   batch->chunk_draws += num_draws;
++}
++
++/* FD_CHUNK_BUSY: account a flushed batch's GPU work (its estimate
++ * x the learned scale) to the context's busy window, and open or close the
++ * gate.  Wall time, not GPU time: a context that keeps the GPU queued
++ * flushes at the GPU's pace, so work / wall time is its GPU share.  The
++ * gate starts open (busy 1.0), so a heavy app is chunked from its first
++ * frame; a light one stops cutting after ~0.4 s.
++ */
++#define CHUNK_BUSY_WINDOW_NS 200000000ll
++
++void
++fd_batch_chunk_account(struct fd_batch *batch)
++{
++   struct fd_context *ctx = batch->ctx;
++   struct fd_chunk_adapt *ad = &ctx->chunk_adapt;
++
++   if (!fd_chunk.busy_on || batch->nondraw)
++      return;
++
++   uint64_t est = batch->chunk_cost_ns;
++   util_dynarray_foreach (&batch->chunk_est, uint32_t, e)
++      est += *e;
++
++   int64_t now = os_time_get_nano();
++   if (!ad->win_start_ns) {
++      ad->win_start_ns = now;
++      ad->busy = 1.0f;
++   }
++   ad->win_work_ns += (uint64_t)((float)est * chunk_scale(ctx));
++   if (!batch->chunked && ad->gate_closed)
++      ad->gated_batches++;
++
++   int64_t wall_ns = now - ad->win_start_ns;
++   if (wall_ns < CHUNK_BUSY_WINDOW_NS)
++      return;
++
++   float f = MIN2((float)ad->win_work_ns / (float)wall_ns, 1.0f);
++   ad->busy = 0.5f * ad->busy + 0.5f * f;
++   ad->busy_windows++;
++   ad->win_start_ns = now;
++   ad->win_work_ns = 0;
++
++   bool closed = ad->gate_closed;
++   if (ad->busy * 100.0f >= (float)fd_chunk.busy_on)
++      closed = false;
++   else if (ad->busy * 100.0f < (float)fd_chunk.busy_off)
++      closed = true;
++   if (closed != ad->gate_closed) {
++      ad->gate_closed = closed;
++      ad->gate_flips++;
++   }
++}
++
+ /* emit a WAIT_FOR_IDLE only if needed, ie. if there has not already
+  * been one since last draw:
+  */
+diff --git a/src/gallium/drivers/freedreno/freedreno_batch.h b/src/gallium/drivers/freedreno/freedreno_batch.h
+index d2caec52682..ef55d9c8424 100644
+--- a/src/gallium/drivers/freedreno/freedreno_batch.h
++++ b/src/gallium/drivers/freedreno/freedreno_batch.h
+@@ -92,6 +92,22 @@ struct fd_batch {
+ 
+    struct fd_context *ctx;
+ 
++   /* chunked submits (see fd_batch_chunk_draw()): */
++   bool chunked;           /* the draw ring was split; render as sysmem chunks */
++   unsigned chunk_idx;     /* chunk being emitted at flush time (0 = first) */
++   unsigned num_chunks;    /* chunks in this batch (cuts + 1 once chunked) */
++   uint32_t chunk_cost_ns; /* unscaled estimated GPU cost of the open chunk */
++   unsigned chunk_draws;   /* draws in the open chunk */
++   /* unscaled estimate of every closed chunk (one uint32_t per cut), so the
++    * flush can attribute the measured GPU time (FD_CHUNK_ADAPT):
++    */
++   struct util_dynarray chunk_est;
++   /* byte offset in ctx->chunk_adapt.bo of the {start, end} timestamp pair
++    * of the segment being emitted at flush time, ~0u = not measured.  The
++    * gen's sysmem_prep writes the start, sysmem_fini the end.
++    */
++   uint32_t chunk_ts_off;
++
+    /* update seqno of most recent draw/etc to the batch. */
+    uint32_t update_seqno;
+ 
+@@ -320,6 +336,38 @@ void fd_batch_resource_read_slowpath(struct fd_batch *batch,
+                                      struct fd_resource *rsc) assert_dt;
+ void fd_batch_check_size(struct fd_batch *batch) assert_dt;
+ 
++/* chunked submits: account a draw to the open chunk, cutting first if it would pass
++ * the budget (FD_CHUNK_US / FD_CHUNK_DRAWS).  Call right before the draw
++ * is emitted, after the batch dependency tracking.
++ */
++void fd_batch_chunk_draw(struct fd_batch *batch, const struct pipe_draw_info *info,
++                         const struct pipe_draw_indirect_info *indirect,
++                         const struct pipe_draw_start_count_bias *draws,
++                         unsigned num_draws) assert_dt;
++
++/* FD_CHUNK_ADAPT: at flush time, before the gen's sysmem_prep of
++ * segment (chunk) `idx`: take a timestamp slot for it, or none if the
++ * adaptation is off or the slot ring is full.  Sets batch->chunk_ts_off.
++ */
++void fd_batch_chunk_ts_begin(struct fd_batch *batch, unsigned idx) assert_dt;
++
++/* FD_CHUNK_BUSY: at flush, account the batch to the context's GPU
++ * share and open/close the busy gate of the cut decision.
++ */
++void fd_batch_chunk_account(struct fd_batch *batch) assert_dt;
++
++/* chunked submits: unscaled cost estimate of chunk `idx` of a batch (the open chunk
++ * for idx >= number of cuts; the whole batch when it was never cut).
++ */
++static inline uint32_t
++fd_batch_chunk_est_ns(struct fd_batch *batch, unsigned idx)
++{
++   unsigned n = util_dynarray_num_elements(&batch->chunk_est, uint32_t);
++   if (idx < n)
++      return *util_dynarray_element(&batch->chunk_est, uint32_t, idx);
++   return batch->chunk_cost_ns;
++}
++
+ uint32_t fd_batch_key_hash(const void *_key);
+ bool fd_batch_key_equals(const void *_a, const void *_b);
+ struct fd_batch_key *fd_batch_key_clone(void *mem_ctx,
+diff --git a/src/gallium/drivers/freedreno/freedreno_context.c b/src/gallium/drivers/freedreno/freedreno_context.c
+index d7ff010d713..8dcbdf62e93 100644
+--- a/src/gallium/drivers/freedreno/freedreno_context.c
++++ b/src/gallium/drivers/freedreno/freedreno_context.c
+@@ -435,6 +435,11 @@ fd_context_destroy(struct pipe_context *pctx)
+       fd_bo_del(ctx->vsc_pipe_bo[i]);
+    }
+ 
++   /* chunked submits: the adaptation's timestamp bo (fd_batch_chunk_ts_begin) */
++   if (ctx->chunk_adapt.bo)
++      fd_bo_del(ctx->chunk_adapt.bo);
++   free(ctx->chunk_adapt.rec);
++
+    fd_device_del(ctx->dev);
+    fd_pipe_purge(ctx->pipe);
+    fd_pipe_del(ctx->pipe);
+@@ -450,11 +455,27 @@ fd_context_destroy(struct pipe_context *pctx)
+    if (FD_DBG(BSTAT) || FD_DBG(MSGS)) {
+       mesa_logi(
+          "batch_total=%u, batch_sysmem=%u, batch_gmem=%u, batch_nondraw=%u, "
+-         "batch_restore=%u\n",
++         "batch_restore=%u, batch_chunked=%u, chunks=%u\n",
+          (uint32_t)ctx->stats.batch_total, (uint32_t)ctx->stats.batch_sysmem,
+          (uint32_t)ctx->stats.batch_gmem, (uint32_t)ctx->stats.batch_nondraw,
+-         (uint32_t)ctx->stats.batch_restore);
++         (uint32_t)ctx->stats.batch_restore, (uint32_t)ctx->stats.batch_chunked,
++         (uint32_t)ctx->stats.chunks);
++      /* chunked submits: the learned scale (FD_CHUNK_ADAPT) */
++      if (fd_chunk.adapt) {
++         struct fd_chunk_adapt *ad = &ctx->chunk_adapt;
++         mesa_logi("chunk_scale=%.3f, adapt_samples=%u, adapt_skipped=%u, "
++                   "adapt_bad=%u, adapt_meas_ms=%u, adapt_est_ms=%u\n",
++                   ad->samples ? ad->scale : 1.0f, ad->samples, ad->skipped,
++                   ad->bad, (uint32_t)(ad->meas_ns / 1000000),
++                   (uint32_t)(ad->est_ns / 1000000));
++         if (fd_chunk.busy_on)
++            mesa_logi("chunk_busy=%.2f, busy_windows=%u, gated_batches=%u, "
++                      "gate_flips=%u, gate %s\n", ad->busy, ad->busy_windows,
++                      ad->gated_batches, ad->gate_flips,
++                      ad->gate_closed ? "closed" : "open");
++      }
+    }
++
+ }
+ 
+ static void
+diff --git a/src/gallium/drivers/freedreno/freedreno_context.h b/src/gallium/drivers/freedreno/freedreno_context.h
+index 79529aac2e7..d184c65be03 100644
+--- a/src/gallium/drivers/freedreno/freedreno_context.h
++++ b/src/gallium/drivers/freedreno/freedreno_context.h
+@@ -331,10 +331,42 @@ struct fd_context {
+       uint64_t draw_calls;
+       uint64_t batch_total, batch_sysmem, batch_gmem, batch_nondraw,
+          batch_restore;
++      uint64_t batch_chunked, chunks; /* chunked submits */
+       uint64_t staging_uploads, shadow_uploads;
+       uint64_t vs_regs, hs_regs, ds_regs, gs_regs, fs_regs;
+    } stats dt;
+ 
++   /* chunked submits: self-calibration of the chunk cost estimate (FD_CHUNK_ADAPT,
++    * see fd_batch_chunk_ts_begin() in freedreno_batch.c).  A ring of slots
++    * in a small bo; the GPU writes a start and an end timestamp per
++    * measured segment (a chunk, or a whole unchunked batch), the CPU reads
++    * the finished slots back later without waiting and keeps an EWMA of
++    * measured / estimated as the scale applied to the estimate.  Driver
++    * thread only (draws and flushes).
++    */
++   struct fd_chunk_adapt {
++      struct fd_bo *bo;      /* nr_slots x {u64 start, u64 end} */
++      uint64_t *map;
++      uint32_t *rec;         /* per slot: the segment's unscaled estimate, ns */
++      uint32_t nr_slots;
++      uint32_t head, tail;   /* slots allocated / consumed (free running) */
++      bool failed;           /* bo allocation failed: adaptation off */
++      float log2_scale;      /* EWMA of log2(measured / estimated) */
++      float scale;           /* exp2(log2_scale), applied to the estimate */
++      /* bstat counters: */
++      uint32_t samples, skipped, bad;
++      uint64_t meas_ns, est_ns;
++      /* FD_CHUNK_BUSY: the context's GPU share over ~200 ms windows of
++       * wall time (estimate x scale of every flushed batch), EWMA; the
++       * gate opens at >= busy_on % and closes below busy_off %:
++       */
++      int64_t win_start_ns;
++      uint64_t win_work_ns;
++      float busy;
++      bool gate_closed;
++      uint32_t busy_windows, gated_batches, gate_flips;
++   } chunk_adapt;
++
+    /* Counter for number of users who need sw counters (so we can
+     * skip collecting them when not needed)
+     */
+diff --git a/src/gallium/drivers/freedreno/freedreno_draw.c b/src/gallium/drivers/freedreno/freedreno_draw.c
+index 837f03dc169..d4da80728ff 100644
+--- a/src/gallium/drivers/freedreno/freedreno_draw.c
++++ b/src/gallium/drivers/freedreno/freedreno_draw.c
+@@ -376,6 +376,12 @@ fd_draw_vbo(struct pipe_context *pctx, const struct pipe_draw_info *info,
+ 
+    batch->cost += ctx->draw_cost;
+ 
++   /* chunked submits: cut the batch into another kernel submit if this draw would
++    * take the open chunk over its budget (default off):
++    */
++   if (unlikely(fd_chunk.enabled))
++      fd_batch_chunk_draw(batch, info, indirect, draws, num_draws);
++
+    ctx->draw_vbos(ctx, info, drawid_offset, indirect, draws, num_draws, index_offset);
+ 
+    if (unlikely(ctx->stats_users > 0))
+diff --git a/src/gallium/drivers/freedreno/freedreno_gmem.c b/src/gallium/drivers/freedreno/freedreno_gmem.c
+index 9f7124dfdee..90114ca6922 100644
+--- a/src/gallium/drivers/freedreno/freedreno_gmem.c
++++ b/src/gallium/drivers/freedreno/freedreno_gmem.c
+@@ -640,11 +640,68 @@ render_tiles(struct fd_batch *batch, struct fd_gmem_stateobj *gmem) assert_dt
+    simple_mtx_unlock(&ctx->gmem_lock);
+ }
+ 
++/* chunked submits: a chunked batch.  fd_ringbuffer_split() closed the draw ring's
++ * cmd before every cut, so a chunk is a run of one or more IB2 cmds.  Every
++ * chunk gets the full sysmem prep/fini bracket and the primary ring is
++ * split between chunks, so the kernel backend issues one ioctl (one GPU job
++ * with a yield at its end) per chunk.  The first chunk's prep and the last
++ * chunk's fini are the caller's.
++ *
++ * Only a split() boundary is a chunk boundary.  The growable draw ring also
++ * starts a new cmd whenever a buffer fills up (fd_ringbuffer_grow, every
++ * SUBALLOC_SIZE bytes) -- between two arbitrary packets, possibly in the
++ * middle of a draw's state -- and the state tracking knows nothing about
++ * those boundaries.  They get no bracket and no submit boundary: like
++ * __OUT_IB5, the cmds of one chunk are emitted back to back.
++ */
++static void
++render_sysmem_chunks(struct fd_batch *batch) assert_dt
++{
++   struct fd_context *ctx = batch->ctx;
++   struct fd_ringbuffer *draw = batch->draw;
++   unsigned n = fd_ringbuffer_cmd_count(draw);
++   bool cut = false;
++
++   batch->chunk_idx = 0;
++
++   for (unsigned i = 0; i < n; i++) {
++      bool split_after;
++      uint32_t size = fd_ringbuffer_cmd_info(draw, i, &split_after);
++
++      /* an empty cmd (a cut whose draw then emitted nothing) gets no IB: */
++      if (size) {
++         if (cut) {
++            if (ctx->emit_sysmem_fini)
++               ctx->emit_sysmem_fini(batch);
++            fd_ringbuffer_split(batch->gmem);
++            batch->chunk_idx++;
++            /* FD_CHUNK_ADAPT: a timestamp slot for the next chunk */
++            fd_batch_chunk_ts_begin(batch, batch->chunk_idx);
++            ctx->emit_sysmem_prep(batch);
++            cut = false;
++         }
++
++         __OUT_IB5_CMD(batch->gmem, draw, i);
++         fd_reset_wfi(batch);
++      }
++
++      cut |= split_after;
++   }
++
++   batch->chunk_idx = 0;
++}
++
+ static void
+ render_sysmem(struct fd_batch *batch) assert_dt
+ {
+    struct fd_context *ctx = batch->ctx;
+ 
++   /* FD_CHUNK_ADAPT: measure the first chunk, or the whole batch
++    * if it was never cut (no-op unless chunking is on):
++    */
++   if (unlikely(fd_chunk.adapt))
++      fd_batch_chunk_ts_begin(batch, 0);
++
+    ctx->emit_sysmem_prep(batch);
+ 
+    if (ctx->query_prepare_tile)
+@@ -654,7 +711,9 @@ render_sysmem(struct fd_batch *batch) assert_dt
+       trace_start_draw_ib(&batch->trace, batch->gmem);
+    }
+    /* emit IB to drawcmds: */
+-   if (ctx->emit_sysmem) {
++   if (batch->chunked) {
++      render_sysmem_chunks(batch);
++   } else if (ctx->emit_sysmem) {
+       ctx->emit_sysmem(batch);
+    } else {
+       ctx->screen->emit_ib(batch->gmem, batch->draw);
+@@ -702,6 +761,10 @@ fd_gmem_render_tiles(struct fd_batch *batch)
+ 
+    ctx->submit_count++;
+ 
++   /* FD_CHUNK_BUSY: the context's GPU share for the busy gate */
++   if (unlikely(fd_chunk.busy_on))
++      fd_batch_chunk_account(batch);
++
+    /* Sometimes we need to flush a batch just to get a fence, with no
+     * clears or draws.. in this case promote to nondraw:
+     */
+@@ -735,6 +798,13 @@ fd_gmem_render_tiles(struct fd_batch *batch)
+    if (FD_DBG(SYSMEM))
+       sysmem = true;
+ 
++   /* chunked submits: a chunked batch has yield points only as sysmem chunks (in
++    * GMEM every cut would be a tile resolve, and the chunk brackets are
++    * the sysmem ones):
++    */
++   if (batch->chunked)
++      sysmem = true;
++
+    /* Layered rendering always needs bypass. */
+    for (unsigned i = 0; i < pfb->nr_cbufs; i++) {
+       struct pipe_surface *psurf = &pfb->cbufs[i];
+diff --git a/src/gallium/drivers/freedreno/freedreno_screen.c b/src/gallium/drivers/freedreno/freedreno_screen.c
+index 4b128d437f1..a2ab4203e4a 100644
+--- a/src/gallium/drivers/freedreno/freedreno_screen.c
++++ b/src/gallium/drivers/freedreno/freedreno_screen.c
+@@ -90,6 +90,7 @@ DEBUG_GET_ONCE_FLAGS_OPTION(fd_mesa_debug, "FD_MESA_DEBUG", fd_debug_options, 0)
+ 
+ int fd_mesa_debug = 0;
+ bool fd_binning_enabled = true;
++struct fd_chunk_config fd_chunk = {0};
+ 
+ static const char *
+ fd_screen_get_name(struct pipe_screen *pscreen)
+@@ -873,6 +874,45 @@ __debug_init(void)
+ 
+    if (FD_DBG(NOBIN))
+       fd_binning_enabled = false;
++
++   /* chunked submits: chunked submits (see freedreno_util.h) */
++   fd_chunk.budget_us = debug_get_num_option("FD_CHUNK_US", 0);
++   fd_chunk.max_draws = debug_get_num_option("FD_CHUNK_DRAWS", 0);
++   fd_chunk.draw_ns = 20000;
++   fd_chunk.vert_ps = 10000;
++   const char *cost = os_get_option("FD_CHUNK_COST");
++   if (cost) {
++      unsigned a, b;
++      if (sscanf(cost, "%u,%u", &a, &b) == 2) {
++         fd_chunk.draw_ns = a;
++         fd_chunk.vert_ps = b;
++      }
++   }
++   fd_chunk.enabled = fd_chunk.budget_us || fd_chunk.max_draws;
++   fd_chunk.adapt = fd_chunk.budget_us &&
++                    debug_get_bool_option("FD_CHUNK_ADAPT", true);
++   fd_chunk.busy_on = 75;
++   fd_chunk.busy_off = 60;
++   const char *busy = os_get_option("FD_CHUNK_BUSY");
++   if (busy) {
++      unsigned a, b;
++      int n = sscanf(busy, "%u,%u", &a, &b);
++      if (n == 2 && a > 0 && b <= a) {
++         fd_chunk.busy_on = a;
++         fd_chunk.busy_off = b;
++      } else if (n >= 1) {
++         fd_chunk.busy_on = a;
++         fd_chunk.busy_off = a;
++      }
++   }
++   if (!fd_chunk.adapt)
++      fd_chunk.busy_on = fd_chunk.busy_off = 0;
++   if (fd_chunk.enabled)
++      mesa_logi("freedreno: chunked submits: budget %u us, max %u draws, "
++                "cost %u ns/draw + %u ps/vertex, adapt %s, busy gate %u,%u",
++                fd_chunk.budget_us, fd_chunk.max_draws, fd_chunk.draw_ns,
++                fd_chunk.vert_ps, fd_chunk.adapt ? "on" : "off",
++                fd_chunk.busy_on, fd_chunk.busy_off);
+ }
+ 
+ static void
+diff --git a/src/gallium/drivers/freedreno/freedreno_util.h b/src/gallium/drivers/freedreno/freedreno_util.h
+index 399422e4b9c..b42a9764c27 100644
+--- a/src/gallium/drivers/freedreno/freedreno_util.h
++++ b/src/gallium/drivers/freedreno/freedreno_util.h
+@@ -93,6 +93,47 @@ extern bool fd_binning_enabled;
+ 
+ #define FD_DBG(category) unlikely(fd_mesa_debug &FD_DBG_##category)
+ 
++/* chunked submits: chunked submits.  A long sysmem batch is cut into several kernel
++ * submits (chunks) so the CP has a yield point every few GPU-ms: the e-ink
++ * engine's high-priority ring gets the GPU within one chunk instead of
++ * within one app frame.  Default off.  Env:
++ *   FD_CHUNK_US=<n>     cut when the estimated GPU time of the open chunk
++ *                       would pass n us (0 = off)
++ *   FD_CHUNK_DRAWS=<n>  cut after n draws (0 = off); either or both
++ *   FD_CHUNK_COST=<draw_ns>,<vert_ps>  the estimate: a fixed cost per draw
++ *                       in ns plus a per-vertex cost in ps (defaults 20000,
++ *                       10000: 20 us + 0.01 us/vertex; calibrate on the
++ *                       device from the longest-submit measurement)
++ *   FD_CHUNK_ADAPT=0    turn the self-calibration off (default on when
++ *                       FD_CHUNK_US is set): the estimate is scaled per
++ *                       context by measured_ns / estimated_ns of the chunks
++ *                       and whole batches already run, from GPU timestamps
++ *                       (see fd_batch_chunk_ts_begin()); with the scale a
++ *                       chunk is ~FD_CHUNK_US of GPU time whatever the app's
++ *                       draws cost, so an app with cheap draws cuts rarely.
++ *   FD_CHUNK_BUSY=<on>,<off>  the busy gate (with FD_CHUNK_ADAPT; default
++ *                       75,60; 0 = always cut): a context cuts only while
++ *                       its own GPU work (estimate x scale) fills >= <on> %
++ *                       of the wall time, and stops below <off> %.  A light
++ *                       app leaves the GPU idle half the time, so the e-ink
++ *                       engine's ring gets in between its submits anyway;
++ *                       there the cuts are pure cost (OpenMW 0.47: 75 -> 57
++ *                       fps, and the panel engine missed no frame either way).
++ *   FD_CHUNK_NOMERGE=1  (drm layer) one ioctl per gallium batch, no merging
++ *                       of deferred submits
++ */
++struct fd_chunk_config {
++   bool enabled;
++   bool adapt;
++   uint32_t budget_us;
++   uint32_t max_draws;
++   uint32_t draw_ns;
++   uint32_t vert_ps;
++   /* FD_CHUNK_BUSY: the busy gate's on/off thresholds, percent (0 = off) */
++   uint32_t busy_on, busy_off;
++};
++extern struct fd_chunk_config fd_chunk;
++
+ #include <unistd.h>
+ #include <sys/types.h>
+ #include <sys/syscall.h>
+@@ -376,6 +417,18 @@ __OUT_IB5(struct fd_ringbuffer *ring, struct fd_ringbuffer *target)
+    }
+ }
+ 
++/* chunked submits: emit one cmd (chunk) of a growable target ring as an IB2. */
++static inline void
++__OUT_IB5_CMD(struct fd_ringbuffer *ring, struct fd_ringbuffer *target,
++              unsigned cmd_idx)
++{
++   uint32_t dwords;
++   OUT_PKT7(ring, CP_INDIRECT_BUFFER, 3);
++   dwords = fd_ringbuffer_emit_reloc_ring_full(ring, target, cmd_idx) / 4;
++   assert(dwords > 0);
++   OUT_RING(ring, dwords);
++}
++
+ /* CP_SCRATCH_REG4 is used to hold base address for query results:
+  * Note the scratch register move on a5xx+ but this is only used
+  * for pre-a5xx hw queries where we cannot allocate the query buf

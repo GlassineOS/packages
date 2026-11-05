@@ -1,0 +1,194 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Moritz=20Mei=C3=9Felbach?= <moritz@glassine.org>
+Date: Thu, 5 Nov 2026 20:48:08 +0100
+Subject: [PATCH 6/6] freedreno/drm: split a growable ring in place while its
+ bo has room
+
+fd_ringbuffer_split() (chunked submits) closed the current cmd by growing
+the ring: a new bo per cut, which cost OpenMW about 13 ms of CPU per frame
+at a cut every 8 draws. Close the cmd inside the current bo instead while
+at least 4 KiB are left: each cmd records its byte offset in the bo, and
+the IB and submit addresses add it. The next cmd starts 8-byte aligned (a
+CP_NOP pads), as the CP fetches IBs with 64-bit alignment.
+
+Only rings that are split change; without FD_CHUNK_* every offset is 0.
+
+Assisted-by: Claude Opus 5.5 (unreviewed; tested only on the A509)
+---
+ src/freedreno/drm/freedreno_ringbuffer_sp.c | 46 +++++++++++++++------
+ src/freedreno/drm/freedreno_ringbuffer_sp.h |  9 ++++
+ src/freedreno/drm/msm/msm_ringbuffer_sp.c   |  3 +-
+ 3 files changed, 45 insertions(+), 13 deletions(-)
+
+diff --git a/src/freedreno/drm/freedreno_ringbuffer_sp.c b/src/freedreno/drm/freedreno_ringbuffer_sp.c
+index 235ffc55a8b..d90a02aabda 100644
+--- a/src/freedreno/drm/freedreno_ringbuffer_sp.c
++++ b/src/freedreno/drm/freedreno_ringbuffer_sp.c
+@@ -17,6 +17,9 @@
+ 
+ #include "freedreno_ringbuffer_sp.h"
+ 
++/* an in-place split needs this much room left in the bo */
++#define SPLIT_MIN_ROOM 4096
++
+ /* A "softpin" implementation of submit/ringbuffer, which lowers CPU overhead
+  * by avoiding the additional tracking necessary to build cmds/relocs tables
+  * (but still builds a bos table)
+@@ -503,7 +506,8 @@ finalize_current_cmd(struct fd_ringbuffer *ring)
+    APPEND(&fd_ring->u, cmds,
+           (struct fd_cmd_sp){
+              .ring_bo = fd_bo_ref(fd_ring->ring_bo),
+-             .size = offset_bytes(ring->cur, ring->start),
++             .size = offset_bytes(ring->cur, ring->start) - fd_ring->cmd_off,
++             .off = fd_ring->cmd_off,
+              .split_after = false,
+           });
+ }
+@@ -525,6 +529,7 @@ fd_ringbuffer_sp_grow(struct fd_ringbuffer *ring, uint32_t size)
+    ring->end = &(ring->start[size / 4]);
+    ring->cur = ring->start;
+    ring->size = size;
++   fd_ring->cmd_off = 0;
+ }
+ 
+ /* chunked submits: like grow, but the closed cmd is marked as the end of a submit
+@@ -538,14 +543,26 @@ fd_ringbuffer_sp_split(struct fd_ringbuffer *ring)
+    assert(ring->flags & FD_RINGBUFFER_GROWABLE);
+    assert(!(ring->flags & _FD_RINGBUFFER_OBJECT));
+ 
+-   if (ring->cur == ring->start) {
++   if (offset_bytes(ring->cur, ring->start) == fd_ring->cmd_off) {
+       /* mark the previous cmd instead, if there is one: */
+       if (fd_ring->u.nr_cmds)
+          fd_ring->u.cmds[fd_ring->u.nr_cmds - 1].split_after = true;
+       return;
+    }
+ 
+-   fd_ringbuffer_sp_grow(ring, ring->size);
++   /* In place while the bo has room: a new bo per split
++    * cost OpenMW ~13 ms of CPU per frame at a cut every 8 draws.  The CP
++    * fetches IBs with 64-bit alignment; cmds are dword streams, so keep
++    * the next cmd's start 8-byte aligned (a CP_NOP pads).
++    */
++   if (((uintptr_t)ring->cur & 4) && ring->cur < ring->end)
++      *ring->cur++ = 0x70108000; /* CP_NOP, pkt7, count 0 (a5xx+) */
++   if (offset_bytes(ring->end, ring->cur) >= SPLIT_MIN_ROOM) {
++      finalize_current_cmd(ring);
++      fd_ring->cmd_off = offset_bytes(ring->cur, ring->start);
++   } else {
++      fd_ringbuffer_sp_grow(ring, ring->size);
++   }
+    fd_ring->u.cmds[fd_ring->u.nr_cmds - 1].split_after = true;
+ }
+ 
+@@ -567,7 +584,7 @@ fd_ringbuffer_sp_cmd_info(struct fd_ringbuffer *ring, uint32_t cmd_idx,
+    }
+ 
+    *split_after = false;
+-   return offset_bytes(ring->cur, ring->start);
++   return offset_bytes(ring->cur, ring->start) - fd_ring->cmd_off;
+ }
+ 
+ static inline bool
+@@ -604,16 +621,20 @@ fd_ringbuffer_sp_assert_attached_nonobj(struct fd_ringbuffer *ring, struct fd_bo
+ }
+ 
+ static struct fd_bo *
+-find_target_bo(struct fd_ringbuffer *target, uint32_t cmd_idx, uint32_t *size)
++find_target_bo(struct fd_ringbuffer *target, uint32_t cmd_idx, uint32_t *size,
++               uint32_t *off)
+ {
+    struct fd_ringbuffer_sp *fd_target = to_fd_ringbuffer_sp(target);
+ 
+    if ((target->flags & FD_RINGBUFFER_GROWABLE) &&
+        (cmd_idx < fd_target->u.nr_cmds)) {
+       *size = fd_target->u.cmds[cmd_idx].size;
++      *off = fd_target->u.cmds[cmd_idx].off;
+       return fd_target->u.cmds[cmd_idx].ring_bo;
+    } else {
+-      *size = offset_bytes(target->cur, target->start);
++      /* the open cmd starts at cmd_off (in-place split) */
++      *off = (target->flags & _FD_RINGBUFFER_OBJECT) ? 0 : fd_target->cmd_off;
++      *size = offset_bytes(target->cur, target->start) - *off;
+       return fd_target->ring_bo;
+    }
+ }
+@@ -628,11 +649,11 @@ fd_ringbuffer_sp_attach_ring_nonobj(struct fd_ringbuffer *ring,
+    struct fd_ringbuffer_sp *fd_ring = to_fd_ringbuffer_sp(ring);
+    struct fd_submit_sp *fd_submit = to_fd_submit_sp(fd_ring->u.submit);
+    struct fd_bo *bo;
+-   uint32_t size;
++   uint32_t size, off;
+ 
+-   bo = find_target_bo(target, cmd_idx, &size);
++   bo = find_target_bo(target, cmd_idx, &size, &off);
+ 
+-   *iova = bo->iova + fd_target->offset;
++   *iova = bo->iova + fd_target->offset + off;
+ 
+    fd_ringbuffer_sp_attach_bo_nonobj(ring, bo);
+ 
+@@ -708,11 +729,11 @@ fd_ringbuffer_sp_attach_ring_obj(struct fd_ringbuffer *ring,
+    struct fd_ringbuffer_sp *fd_target = to_fd_ringbuffer_sp(target);
+    struct fd_ringbuffer_sp *fd_ring = to_fd_ringbuffer_sp(ring);
+    struct fd_bo *bo;
+-   uint32_t size;
++   uint32_t size, off;
+ 
+-   bo = find_target_bo(target, cmd_idx, &size);
++   bo = find_target_bo(target, cmd_idx, &size, &off);
+ 
+-   *iova = bo->iova + fd_target->offset;
++   *iova = bo->iova + fd_target->offset + off;
+ 
+    fd_ringbuffer_sp_attach_bo_obj(ring, bo);
+ 
+@@ -851,6 +872,7 @@ fd_ringbuffer_sp_init(struct fd_ringbuffer_sp *fd_ring, uint32_t size,
+    ring->start = (void *)(base + fd_ring->offset);
+    ring->end = &(ring->start[size / 4]);
+    ring->cur = ring->start;
++   fd_ring->cmd_off = 0; /* slab memory is not zeroed */
+ 
+    ring->size = size;
+    ring->flags = flags;
+diff --git a/src/freedreno/drm/freedreno_ringbuffer_sp.h b/src/freedreno/drm/freedreno_ringbuffer_sp.h
+index c9304515366..2b6b805dd86 100644
+--- a/src/freedreno/drm/freedreno_ringbuffer_sp.h
++++ b/src/freedreno/drm/freedreno_ringbuffer_sp.h
+@@ -81,6 +81,10 @@ FD_DEFINE_CAST(fd_submit, fd_submit_sp);
+ struct fd_cmd_sp {
+    struct fd_bo *ring_bo;
+    unsigned size;
++   /* byte offset of the cmd in ring_bo (past the ring's own
++    * offset); non-zero only after an in-place fd_ringbuffer_split()
++    */
++   unsigned off;
+    /* chunked submits: this cmd was closed by fd_ringbuffer_split(), not by a grow.
+     * On the primary ring the kernel backend starts a new ioctl after it;
+     * on an IB2 ring the gallium driver reads it back (cmd_info) to tell a
+@@ -122,6 +126,11 @@ struct fd_ringbuffer_sp {
+    } u;
+ 
+    struct fd_bo *ring_bo;
++
++   /* byte offset from ring->start where the open cmd begins
++    * (0 unless an in-place split closed a cmd inside the current bo)
++    */
++   unsigned cmd_off;
+ };
+ FD_DEFINE_CAST(fd_ringbuffer, fd_ringbuffer_sp);
+ 
+diff --git a/src/freedreno/drm/msm/msm_ringbuffer_sp.c b/src/freedreno/drm/msm/msm_ringbuffer_sp.c
+index c7ae1adafcd..1fa73746c9a 100644
+--- a/src/freedreno/drm/msm/msm_ringbuffer_sp.c
++++ b/src/freedreno/drm/msm/msm_ringbuffer_sp.c
+@@ -76,7 +76,8 @@ flush_submit_list(struct list_head *submit_list)
+          struct fd_bo *ring_bo = deferred_primary->u.cmds[i].ring_bo;
+          cmds[cmd_idx].type = MSM_SUBMIT_CMD_BUF;
+          cmds[cmd_idx].submit_idx = fd_submit_append_bo(fd_submit, ring_bo);
+-         cmds[cmd_idx].submit_offset = submit_offset(ring_bo, deferred_primary->offset);
++         cmds[cmd_idx].submit_offset = submit_offset(ring_bo, deferred_primary->offset) +
++                                       deferred_primary->u.cmds[i].off;
+          cmds[cmd_idx].size = deferred_primary->u.cmds[i].size;
+          cmds[cmd_idx].pad = 0;
+          cmds[cmd_idx].nr_relocs = 0;

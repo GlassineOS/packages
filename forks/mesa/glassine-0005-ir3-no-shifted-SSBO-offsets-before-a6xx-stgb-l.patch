@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Moritz=20Mei=C3=9Felbach?= <moritz@glassine.org>
 Date: Thu, 5 Nov 2026 20:38:49 +0100
-Subject: [PATCH 5/6] ir3: no shifted SSBO offsets before a6xx (stgb/ldgb take
+Subject: [PATCH 5/7] ir3: no shifted SSBO offsets before a6xx (stgb/ldgb take
  bytes)
 
 Since nir_lower_explicit_io can emit shifted offsets (max_offset_shift), the

@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Moritz=20Mei=C3=9Felbach?= <moritz@glassine.org>
 Date: Thu, 5 Nov 2026 20:38:49 +0100
-Subject: [PATCH 1/6] freedreno: chunked submits (FD_CHUNK_*), off by default
+Subject: [PATCH 1/7] freedreno: chunked submits (FD_CHUNK_*), off by default
 
 A long sysmem batch is cut into several kernel submits (chunks), so the CP
 has a yield point every few GPU-ms and a high-priority ring (the e-ink panel

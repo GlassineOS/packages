@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Moritz=20Mei=C3=9Felbach?= <moritz@glassine.org>
 Date: Thu, 5 Nov 2026 20:38:49 +0100
-Subject: [PATCH 4/6] freedreno/a5xx: no inline fast clear after draws in a
+Subject: [PATCH 4/7] freedreno/a5xx: no inline fast clear after draws in a
  batch
 
 fd5_clear inlines a BLIT-event fast clear wherever the clear falls in the

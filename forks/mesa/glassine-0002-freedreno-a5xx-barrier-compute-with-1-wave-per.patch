@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Moritz=20Mei=C3=9Felbach?= <moritz@glassine.org>
 Date: Thu, 5 Nov 2026 20:38:49 +0100
-Subject: [PATCH 2/6] freedreno/a5xx: barrier() compute with >1 wave per
+Subject: [PATCH 2/7] freedreno/a5xx: barrier() compute with >1 wave per
  workgroup (A509 hangs)
 
 Two fixes, found on the Adreno 509 (Boox Note Air 1, Mesa 25.1.9; ported to 26.1.6):

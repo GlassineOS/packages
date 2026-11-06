@@ -10,10 +10,10 @@
 pkgname=glassine-shell
 pkgver=0_git20261106
 # GlassineOS/shell main
-_commit=1bd6ef4bba90b8bced34445522ad2fe698188a25
+_commit=197a053207878083989fe834c29f827f8b42ccd4
 # google/fonts, as in the shell's fonts/fetch-fonts.sh
 _gf=https://raw.githubusercontent.com/google/fonts/0b58fb370093f9a9f4ff785d94405710b79de67c/ofl
-pkgrel=0
+pkgrel=1
 pkgdesc="GlassineOS e-ink desktop: shell, window model, settings, sway session"
 url="https://github.com/GlassineOS/shell"
 arch="all"
@@ -101,7 +101,7 @@ fonts() {
 }
 
 sha512sums="
-20428e92fc3e5c2af788b6c72135adde78db7d367f37b26021a7a067b6b942d0b987ffe60bd78554897bf31a94606e90346bd9258f7b88ab72cb984e93c9b5ab  shell-1bd6ef4bba90b8bced34445522ad2fe698188a25.tar.gz
+2128ae75ef9685de9de393a19d716bf87b989f53220af0bb14898f1cc636715a78ae80035ffb991a407792c461fba19a80f4e3952144a457f07f52dd669d9109  shell-197a053207878083989fe834c29f827f8b42ccd4.tar.gz
 f6227ae0b96a951e5282babc44864893e92d12f6dcfe8c8bd7b548ca0f239bc71fc88ad17ddb5de45fc36a38896e1dbe1075a3260562a13db733a18e820f1442  IBMPlexSans-VF.ttf
 cea00ba67a618a50f318ed0baa07085e1dffe1ab90875ed7b5295d81040a62b6d71f08b1c416d78c0ebff324676c778855ac90d595082a8eb222dc7afb31d552  IBMPlexMono-Regular.ttf
 8bc228f89d2045902e2dc71387a6bef978d6b1f27467c5419f0d405803d5037f0c157ec2dd40d95bcc5b93d9f17e59c0c00701f88a1ffb18a9050d2564cf19a2  IBMPlexMono-Medium.ttf

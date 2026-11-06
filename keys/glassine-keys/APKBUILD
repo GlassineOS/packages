@@ -4,14 +4,14 @@
 # and sign with it only after devices have it.
 pkgname=glassine-keys
 pkgver=1
-pkgrel=0
+pkgrel=1
 pkgdesc="GlassineOS package repository signing keys"
 url="https://github.com/GlassineOS/packages"
 arch="noarch"
 license="GPL-2.0-or-later"
 options="!check"
 install="$pkgname.post-install $pkgname.post-upgrade $pkgname.pre-deinstall"
-_branch=v3.22
+_branch=v3.24
 _keys="glassine-20261015.rsa.pub"
 source="$_keys"
 

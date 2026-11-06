@@ -1,5 +1,16 @@
 #!/bin/sh
-# add the GlassineOS repository once; the line is the one this package ships
+# One GlassineOS repository line, the one this package ships: it takes the place of the
+# first GlassineOS line of any Alpine release (so a release change moves the system to
+# the new repository), other GlassineOS lines go, and it is added if there was none.
 line=$(cat /usr/share/glassine/apk-repository) || exit 0
-grep -qxF "$line" /etc/apk/repositories 2>/dev/null || echo "$line" >> /etc/apk/repositories
+f=/etc/apk/repositories
+[ -f "$f" ] || { echo "$line" > "$f"; exit 0; }
+awk -v line="$line" '
+	/^https:\/\/pkgs\.glassine\.org\/alpine\/[^\/]+\/glassine\/?$/ {
+		if (!done) print line; done = 1; next
+	}
+	{ print }
+	END { if (!done) print line }
+' "$f" > "$f.new" && cat "$f.new" > "$f"
+rm -f "$f.new"
 exit 0

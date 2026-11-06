@@ -1,0 +1,54 @@
+# Maintainer: Moritz Meißelbach <moritz@glassine.org>
+# The e-ink panel daemons from GlassineOS/epd. glassine-epdd (the recovery's daemon) and
+# glassine-epd-show (the boot splash) are static, CPU only; glassine-epdd-desktop drives
+# the desktop session's panel on the GPU. All read the device from the adapter config
+# /etc/glassine/epd.conf, which the device package provides, with the waveform path in
+# it. No waveform is in any package: the device's own is read at run time.
+pkgname=glassine-epdd
+pkgver=0_git20261106
+# GlassineOS/epd main
+_commit=7754231d80e560cf334deb083c2a50cd33993976
+pkgrel=0
+pkgdesc="GlassineOS e-ink panel daemon (recovery, static) and boot splash"
+url="https://github.com/GlassineOS/epd"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	libdrm-dev
+	libx11-dev
+	libxcomposite-dev
+	libxdamage-dev
+	libxext-dev
+	libxfixes-dev
+	libxi-dev
+	linux-headers
+	mesa-dev
+	python3
+	"
+subpackages="$pkgname-desktop $pkgname-dev"
+source="epd-$_commit.tar.gz::https://github.com/GlassineOS/epd/archive/$_commit.tar.gz"
+builddir="$srcdir/epd-$_commit"
+
+build() {
+	# the engine's timings were measured at -O2; abuild's default -Os is slower
+	make CFLAGS="${CFLAGS/-Os/-O2}" all
+}
+
+check() {
+	# synthetic waveform; GPU tests skip without a render node. The flip comparison
+	# needs a real panel's timing, as in epd's own CI
+	GLASSINE_UPD_NOFLIPS=1 make check
+}
+
+package() {
+	make DESTDIR="$pkgdir" PREFIX=/usr install
+}
+
+desktop() {
+	pkgdesc="GlassineOS e-ink panel daemon for the desktop session (GPU engine)"
+	amove usr/sbin/glassine-epdd-desktop
+}
+
+sha512sums="
+305291fc444ad776eb95e3a872fabf734788e3b8e523bd779849ccd1255573740d17e549d2703a7a348d02106311e1cc8393ddbdfd0db8d8e2a629deabb572a5  epd-7754231d80e560cf334deb083c2a50cd33993976.tar.gz
+"

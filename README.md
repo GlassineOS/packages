@@ -3,14 +3,14 @@
 Alpine package recipes of GlassineOS (aports layout, `APKBUILD` + `abuild`), and the
 CI that builds, signs and publishes them to
 
-    https://pkgs.glassine.org/alpine/v3.22/glassine
+    https://pkgs.glassine.org/alpine/v3.24/glassine
 
 | Directory | Holds |
 |---|---|
 | `keys/` | `glassine-keys`: the repository's public signing key + the repository line |
 | `device/` | kernels and device packages (`linux-glassine-sdm660`, …) |
 | `glassine/` | our own software |
-| `forks/` | patched upstream software, renamed (`sway-glassine` with `provides`/`replaces`), or an Alpine recipe rebuilt with our patches under Alpine's names (`mesa`) |
+| `forks/` | patched upstream software, renamed and installed beside the original (`sway-glassine` installs `/usr/bin/sway-glassine`, Alpine's `sway` stays), or an Alpine recipe rebuilt with our patches under Alpine's names (`mesa`) |
 
 A recipe directory has the name of its main package. Sources come from tags or pinned
 commits of the GlassineOS repositories (checksum in the recipe); patches live in those
@@ -20,16 +20,24 @@ tarball, and the patches sit next to it, as in aports.
 
 ## Branches
 
-`main` builds for Alpine v3.22 (the release GlassineOS images use). The release lives
+`main` builds for Alpine v3.24 (the release GlassineOS images use). The release lives
 in one place per script (`BRANCH` in `scripts/build.sh`, `REPO_URL` in
-`.github/workflows/publish.yml`, `_branch` in `keys/glassine-keys`). When we move to
-the next Alpine release, the old one gets a `3.22-stable` branch, as in aports.
+`.github/workflows/publish.yml`, `_branch` and a new `pkgrel` in `keys/glassine-keys`,
+the container in `scripts/docker-build.sh`). When we move to the next Alpine release,
+the old one keeps its recipes on a `<release>-stable` branch, as in aports
+(`3.22-stable` so far).
+
+Only `main`'s release is published: Pages replaces the whole site on each deploy, so
+an older release's repository stops being served at the first publish of the new one.
+After a release change, run `publish` by hand with `all`, because the new repository
+starts empty and a normal run builds only what changed. `glassine-keys` moves an
+installed system to the new repository line on upgrade.
 
 ## Building
 
     scripts/docker-build.sh device/linux-glassine-sdm660
 
-builds in a clean `alpine:3.22` container into `out/alpine/v3.22/glassine/<arch>/`,
+builds in a clean `alpine:3.24` container into `out/alpine/v3.24/glassine/<arch>/`,
 signed with a throwaway key unless `ABUILD_PRIVKEY` holds the repository key. On an
 arm64 host the packages are aarch64; elsewhere use an arm64 machine (the kernel takes
 hours under QEMU). Pin a source with `scripts/pin-source.sh URL [NAME]` (fails on HTTP

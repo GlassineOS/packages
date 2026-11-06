@@ -12,10 +12,10 @@ cat > "$out/index.html" <<'HTML'
 <style>body{font:16px/1.5 system-ui,sans-serif;max-width:40rem;margin:2rem auto;padding:0 1rem}code,pre{background:#eee;padding:.1rem .3rem}</style>
 <h1>GlassineOS packages</h1>
 <p>Alpine package repository of <a href="https://github.com/GlassineOS">GlassineOS</a>.
-GlassineOS images already use it. On another Alpine v3.22 system, put the
+GlassineOS images already use it. On another Alpine v3.24 system, put the
 <a href="keys/">signing key</a> into <code>/etc/apk/keys/</code> and add this line to
 <code>/etc/apk/repositories</code>:</p>
-<pre>https://pkgs.glassine.org/alpine/v3.22/glassine</pre>
+<pre>https://pkgs.glassine.org/alpine/v3.24/glassine</pre>
 <p>After that, the <code>glassine-keys</code> package keeps both up to date.</p>
 <p>Sources and build recipes: <a href="https://github.com/GlassineOS/packages">GlassineOS/packages</a>.</p>
 HTML

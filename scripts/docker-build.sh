@@ -4,4 +4,4 @@
 # packages are aarch64). Same arguments as build.sh; ABUILD_PRIVKEY is passed through.
 set -eu
 cd "$(dirname "$0")/.."
-exec docker run --rm -e ABUILD_PRIVKEY -v "$PWD:/src" alpine:3.22 sh /src/scripts/build.sh "$@"
+exec docker run --rm -e ABUILD_PRIVKEY -v "$PWD:/src" alpine:3.24 sh /src/scripts/build.sh "$@"

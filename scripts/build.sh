@@ -13,7 +13,7 @@
 # the whole site, so each deploy must carry everything).
 set -eu
 
-BRANCH=v3.22
+BRANCH=v3.24
 merge=
 if [ "${1:-}" = --merge ]; then merge=$2; shift 2; fi
 [ $# -gt 0 ] || { echo "usage: $0 [--merge URL] DIR..." >&2; exit 2; }

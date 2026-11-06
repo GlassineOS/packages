@@ -23,7 +23,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  REPO_URL: https://pkgs.glassine.org/alpine/v3.22/glassine/aarch64
+  REPO_URL: https://pkgs.glassine.org/alpine/v3.24/glassine/aarch64
 
 jobs:
   build:

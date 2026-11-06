@@ -10,7 +10,7 @@ CI that builds, signs and publishes them to
 | `keys/` | `glassine-keys`: the repository's public signing key + the repository line |
 | `device/` | kernels and device packages (`linux-glassine-sdm660`, …) |
 | `glassine/` | our own software |
-| `forks/` | patched upstream software, renamed (`sway-glassine` with `provides`/`replaces`) |
+| `forks/` | patched upstream software, renamed and installed beside the original (`sway-glassine` installs `/usr/bin/sway-glassine`, Alpine's `sway` stays) |
 
 A recipe directory has the name of its main package. Sources come from tags or pinned
 commits of the GlassineOS repositories (checksum in the recipe); patches live in those

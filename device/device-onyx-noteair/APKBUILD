@@ -1,0 +1,87 @@
+# Maintainer: Moritz Meißelbach <moritz@glassine.org>
+# The Onyx Boox Note Air's system services and scripts. Its configuration files
+# (sysctl, sound routing) are in the device stage of GlassineOS/images.
+pkgname=device-onyx-noteair
+pkgver=1
+pkgrel=0
+builddir="$srcdir"
+pkgdesc="Onyx Boox Note Air: clock, power modes, e-ink splash, boot tuning"
+url="https://github.com/GlassineOS/packages"
+arch="noarch"
+license="GPL-2.0-or-later"
+depends="busybox glassine-epdd"
+source="glassine-clock
+	glassine-clock.initd
+	glassine-clock.nm-dispatcher
+	glassine-ddr
+	glassine-session.confd
+	glassine-splash.initd
+	onyx-noteair-tune.initd
+	"
+
+build() {
+	# the splash: a white page at the panel's size (portrait, 8-bit grey)
+	{ printf 'P5\n1404 1872\n255\n'; head -c $((1404 * 1872)) /dev/zero | tr '\0' '\377'; } > "$srcdir"/splash.pgm
+}
+
+check() {
+	local f t rc
+	for f in glassine-clock glassine-clock.initd glassine-clock.nm-dispatcher glassine-ddr \
+		glassine-session.confd glassine-splash.initd onyx-noteair-tune.initd; do
+		sh -n "$srcdir/$f" || return 1
+	done
+	t="$srcdir/t"; rm -rf "$t"; mkdir -p "$t/p" "$t/cg" "$t/pip"
+
+	# the clock: the offset is system time - RTC
+	echo 1000 > "$t/rtc"
+	GLASSINE_CLOCK_RTC="$t/rtc" GLASSINE_CLOCK_OFFSET="$t/off" sh "$srcdir/glassine-clock" save
+	[ $(( $(date +%s) - 1000 - $(cat "$t/off") )) -le 2 ] || { echo "clock: offset $(cat "$t/off")"; return 1; }
+
+	# the power modes against stand-in sysfs files
+	for f in ddr_table ddr_min_kbps ddr_max_kbps; do : > "$t/p/$f"; done
+	: > "$t/cg/cpu.uclamp.min"; : > "$t/pip/pip"
+	ddr() {
+		GLASSINE_DDR_PARAMS="$t/p" GLASSINE_UCLAMP_CG="$t/cg" GLASSINE_PIP_GLOB="$t/pip/pip" \
+		GLASSINE_EPDD_CTL="$t/ctl" GLASSINE_DDR_SAVED="$t/ddr" sh "$srcdir/glassine-ddr" "$@" 2>/dev/null
+	}
+	[ "$(ddr)" = performance ] || { echo "ddr: no saved mode is not performance"; return 1; }
+	[ "$(cat "$t/p/ddr_table") $(cat "$t/p/ddr_min_kbps") $(cat "$t/cg/cpu.uclamp.min")" = "cmax 5163000 60" ] \
+		|| { echo "ddr: performance applied wrong"; return 1; }
+	ddr saver >/dev/null
+	[ "$(cat "$t/ddr") $(cat "$t/p/ddr_table") $(cat "$t/p/ddr_min_kbps") $(cat "$t/cg/cpu.uclamp.min")" = "saver stock 0 0" ] \
+		|| { echo "ddr: saver not saved or applied"; return 1; }
+	[ "$(ddr epdd-opts)" = boost=0 ] || { echo "ddr: saver keeps the boost"; return 1; }
+	ddr balanced >/dev/null
+	[ "$(ddr epdd-opts)" = boost=150 ] && [ "$(cat "$t/p/ddr_table")" = cmax ] || { echo "ddr: balanced"; return 1; }
+	echo nonsense > "$t/ddr"
+	[ "$(ddr)" = performance ] || { echo "ddr: an unknown saved mode is not performance"; return 1; }
+	rc=0; ddr fast >/dev/null || rc=$?
+	[ $rc = 2 ] || { echo "ddr: an unknown level is accepted"; return 1; }
+	rm "$t/p/ddr_table"
+	ddr saver >/dev/null; [ "$(cat "$t/p/ddr_max_kbps")" = 2086000 ] || { echo "ddr: no table, no cap"; return 1; }
+	rm "$t/p/ddr_min_kbps"
+	rc=0; ddr >/dev/null || rc=$?
+	[ $rc = 1 ] || { echo "ddr: no voter is not an error"; return 1; }
+	[ "$(cat "$t/cg/cpu.uclamp.min")" = 0 ] || { echo "ddr: no voter, no floor"; return 1; }
+}
+
+package() {
+	install -Dm755 "$srcdir"/glassine-clock "$pkgdir"/usr/sbin/glassine-clock
+	install -Dm755 "$srcdir"/glassine-ddr "$pkgdir"/usr/sbin/glassine-ddr
+	install -Dm755 "$srcdir"/glassine-clock.initd "$pkgdir"/etc/init.d/glassine-clock
+	install -Dm755 "$srcdir"/glassine-splash.initd "$pkgdir"/etc/init.d/glassine-splash
+	install -Dm755 "$srcdir"/onyx-noteair-tune.initd "$pkgdir"/etc/init.d/onyx-noteair-tune
+	install -Dm644 "$srcdir"/glassine-session.confd "$pkgdir"/etc/conf.d/glassine-session
+	install -Dm755 "$srcdir"/glassine-clock.nm-dispatcher \
+		"$pkgdir"/etc/NetworkManager/dispatcher.d/50-glassine-clock
+	install -Dm644 "$srcdir"/splash.pgm "$pkgdir"/usr/share/glassine/splash.pgm
+}
+sha512sums="
+9706b48fca84aa8f0714f30994c648264612bdd078a21a51c9dbd5195445e2f3654068532c07818e9606e881c31a9820000a8dce7085dc00e9e69af1ef85abc1  glassine-clock
+25a60f5ab6c9a5592d33a107fc2a33c8eefc8601e9aa22ca965801cf1ec6db3e6152472591e8dd36460edec119466908c717c8195ecb34c44188f8ef69bca859  glassine-clock.initd
+35fabd4c4f1f6d5bd28fd1a0b0502e8dc969502ecddfdbd792338ed812ef867f5b893ab7c3bc5d3d63bbffcc0d1b570f8f2b19ff3c9142fe12e2f244b649ab34  glassine-clock.nm-dispatcher
+5946fc2ce4e8311e5be331a9c9bd305942340436bb4c7864e101365f633342f0b56c7a26a0e6453cfeff46dfb3a0c99db0a0f6c40f541e1562a1ed44338ce3d5  glassine-ddr
+1f3f012fcfebda0093884eb3e7e6ecef835268f3b5a7646bf4690aa8970cefd4b7641fa64d36e86664ec31c098823acd22ed3ae6a453c0dce4ca0f08a66395af  glassine-session.confd
+5fa5ae86cbb297ce05fb06b34048d2c86796cc312a314eba1e24558b7d8f5ef0e7c119a29379e58b6d87cb8797776d58d75828d9d2dd163acb55857f7dbf5fb9  glassine-splash.initd
+c82a04ed6cf8391dbbdd81c0fc5c1b3a3aec1cb87f68d4afbcf70c03f1098d29115273e3f2f409be0d3282fb6ddaeedc0918859e0fa1a20bce88e721af8daca2  onyx-noteair-tune.initd
+"

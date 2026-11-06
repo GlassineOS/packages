@@ -1,0 +1,34 @@
+#!/sbin/openrc-run
+# The e-ink panel at boot and at power-off: glassine-epd-show (glassine-epdd)
+# draws /usr/share/glassine/splash.pgm before the desktop takes the panel. At
+# power-off it draws it again with a "POWERED OFF" bar: the panel keeps its last
+# picture without power, so a device that is off would look frozen.
+description="E-ink panel splash at boot and power-off"
+IMG=/usr/share/glassine/splash.pgm
+
+depend() {
+	need localmount
+	before glassine-session
+}
+
+start() {
+	[ -r $IMG ] || return 0
+	ebegin "Showing the e-ink splash"
+	# the engine needs the display device (up to 10 s); the timeout keeps a
+	# stuck stream from holding up the boot
+	i=0; while [ ! -e /dev/dri/card0 ] && [ $i -lt 20 ]; do sleep 0.5; i=$((i + 1)); done
+	timeout 60 /usr/sbin/glassine-epd-show $IMG 2
+	eend $?
+}
+
+# On a power-off only (a reboot gets the boot splash): BusyBox init runs the same
+# shutdown for both, so glassine-power-root marks a power-off in
+# /run/glassine-poweroff. The session has stopped by now, but give the panel
+# daemon a moment to let go.
+stop() {
+	[ "$RC_RUNLEVEL" = shutdown ] && [ -e /run/glassine-poweroff ] && [ -r $IMG ] || return 0
+	ebegin "Showing the e-ink power-off screen"
+	i=0; while pidof glassine-epdd-desktop glassine-epdd >/dev/null && [ $i -lt 20 ]; do sleep 0.25; i=$((i + 1)); done
+	timeout 20 /usr/sbin/glassine-epd-show $IMG 2 "POWERED OFF"
+	eend $?
+}

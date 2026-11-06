@@ -1,0 +1,24 @@
+#!/sbin/openrc-run
+# The system clock from the read-only RTC plus the offset glassine-clock saved
+# (at shutdown and after every NTP sync).
+description="System clock from the read-only RTC and a saved offset"
+F=/var/lib/glassine/clock-offset
+RTC=/sys/class/rtc/rtc0/since_epoch
+
+depend() {
+	need localmount
+	after hwclock
+	before logger
+}
+
+start() {
+	ebegin "Restoring the clock"
+	[ -r $F ] && [ -r $RTC ] && date -s "@$(( $(cat $RTC) + $(cat $F) ))" >/dev/null
+	eend $?
+}
+
+stop() {
+	ebegin "Saving the clock offset"
+	/usr/sbin/glassine-clock save
+	eend $?
+}

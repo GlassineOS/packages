@@ -1,0 +1,24 @@
+#!/sbin/openrc-run
+# Onyx Boox Note Air: CPU frequency and storage settings at boot.
+# - schedutil re-evaluates at most every 20 ms. The OSM cpufreq driver reports no
+#   transition latency, so the default (1 ms) woke the governor threads about 140
+#   times a second at idle, each with cross-CPU calls.
+# - eMMC read-ahead 128 -> 1024 KB: a cold browser start went from 8.8 to 7.4 s,
+#   other apps unchanged (the card already runs HS400ES with command queueing).
+description="Onyx Boox Note Air CPU frequency and storage settings"
+
+depend() {
+	need localmount
+}
+
+start() {
+	ebegin "Tuning CPU frequency and storage"
+	for p in /sys/devices/system/cpu/cpufreq/policy*/schedutil/rate_limit_us; do
+		[ -w "$p" ] && echo 20000 > "$p"
+	done
+	for q in /sys/block/mmcblk*/queue/read_ahead_kb; do
+		case $q in *boot*|*rpmb*) continue ;; esac
+		[ -w "$q" ] && echo 1024 > "$q"
+	done
+	eend 0
+}

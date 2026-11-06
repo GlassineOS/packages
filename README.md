@@ -45,6 +45,10 @@ errors and broken archives; the `checksum` workflow runs it on a GitHub runner w
 GitHub rate-limits your network). `scripts/changed.sh BASE` lists what changed since `BASE`, in build
 order (keys, device, glassine, forks).
 
+A recipe may depend on packages of other recipes here: the build resolves those from
+the published repository when they aren't rebuilt in the same run (so on an
+architecture without a published repository, build them together).
+
 ## CI
 
 - `build`: pull requests and branches. Builds the changed packages with a throwaway

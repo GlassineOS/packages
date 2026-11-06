@@ -1,0 +1,112 @@
+# Maintainer: Moritz Meißelbach <moritz@glassine.org>
+# The e-ink desktop around the apps, from GlassineOS/shell: the bar and its views
+# (glassine-shell-wl), the window model (glassine-swayd), the settings app, the
+# first-run setup, the sway session with its services and root helpers, the GTK
+# themes and the glassine-mono icons. The theme fonts that Alpine doesn't package
+# are in glassine-shell-fonts (pinned google/fonts files, OFL).
+#
+# Optional, used when installed: grim (Print key), foot (terminal key),
+# alpine-appstream-downloader (app catalogue on connect), xdg-user-dirs.
+pkgname=glassine-shell
+pkgver=0_git20261106
+# GlassineOS/shell main
+_commit=1bd6ef4bba90b8bced34445522ad2fe698188a25
+# google/fonts, as in the shell's fonts/fetch-fonts.sh
+_gf=https://raw.githubusercontent.com/google/fonts/0b58fb370093f9a9f4ff785d94405710b79de67c/ofl
+pkgrel=0
+pkgdesc="GlassineOS e-ink desktop: shell, window model, settings, sway session"
+url="https://github.com/GlassineOS/shell"
+arch="all"
+license="GPL-2.0-or-later AND CC-BY-SA-4.0"
+# swaymsg comes from Alpine's sway; sway-glassine is the compositor the session runs
+depends="
+	$pkgname-fonts
+	at-spi2-core
+	blueman
+	bluez
+	dbus
+	doas
+	flock
+	glassine-epdd-desktop
+	glib
+	gtk+3.0
+	librsvg
+	networkmanager-cli
+	pango
+	pipewire
+	playerctl
+	pulseaudio-utils
+	py3-cairo
+	py3-gobject3
+	python3
+	seatd
+	sway
+	sway-glassine
+	wireplumber
+	wvkbd-glassine
+	"
+makedepends="
+	cairo-dev
+	glib-dev
+	json-c-dev
+	libxkbcommon-dev
+	librsvg-dev
+	pango-dev
+	wayland-dev
+	wayland-protocols
+	"
+subpackages="$pkgname-fonts:fonts:noarch"
+source="shell-$_commit.tar.gz::https://github.com/GlassineOS/shell/archive/$_commit.tar.gz
+	IBMPlexSans-VF.ttf::$_gf/ibmplexsans/IBMPlexSans%5Bwdth%2Cwght%5D.ttf
+	IBMPlexMono-Regular.ttf::$_gf/ibmplexmono/IBMPlexMono-Regular.ttf
+	IBMPlexMono-Medium.ttf::$_gf/ibmplexmono/IBMPlexMono-Medium.ttf
+	IBMPlexMono-SemiBold.ttf::$_gf/ibmplexmono/IBMPlexMono-SemiBold.ttf
+	SourceSerif4-VF.ttf::$_gf/sourceserif4/SourceSerif4%5Bopsz%2Cwght%5D.ttf
+	SourceSerif4-Italic-VF.ttf::$_gf/sourceserif4/SourceSerif4-Italic%5Bopsz%2Cwght%5D.ttf
+	NotoEmoji-VF.ttf::$_gf/notoemoji/NotoEmoji%5Bwght%5D.ttf
+	"
+builddir="$srcdir/shell-$_commit"
+
+build() {
+	make
+}
+
+check() {
+	# make check needs Docker (its tests run in their own containers); here only
+	# what runs in the build: every script parses
+	local f
+	for f in $(grep -rlE '^#!.*python' rootfs) $(find rootfs -name '*.py'); do
+		python3 -c 'import ast, sys; ast.parse(open(sys.argv[1]).read(), sys.argv[1])' "$f"
+	done
+	for f in $(grep -rlE '^#!/bin/sh' rootfs); do
+		sh -n "$f"
+	done
+}
+
+package() {
+	mkdir -p "$pkgdir"
+	cp -a rootfs/. "$pkgdir"/
+	install -Dm755 glassine-shell-wl glassine-swayd -t "$pkgdir"/usr/bin/
+	chmod 0644 "$pkgdir"/etc/doas.d/glassine.conf
+	install -Dm644 rootfs/usr/share/icons/glassine-mono/LICENSE \
+		"$pkgdir"/usr/share/licenses/$pkgname/icons-CC-BY-SA-4.0
+}
+
+fonts() {
+	pkgdesc="Theme fonts of the GlassineOS e-ink desktop (IBM Plex, Source Serif 4, Noto Emoji, EB Garamond)"
+	license="OFL-1.1"
+	depends="font-eb-garamond"
+	install -Dm644 "$srcdir"/IBMPlex*.ttf "$srcdir"/SourceSerif4*.ttf "$srcdir"/NotoEmoji-VF.ttf \
+		-t "$subpkgdir"/usr/share/fonts/glassine/
+}
+
+sha512sums="
+20428e92fc3e5c2af788b6c72135adde78db7d367f37b26021a7a067b6b942d0b987ffe60bd78554897bf31a94606e90346bd9258f7b88ab72cb984e93c9b5ab  shell-1bd6ef4bba90b8bced34445522ad2fe698188a25.tar.gz
+f6227ae0b96a951e5282babc44864893e92d12f6dcfe8c8bd7b548ca0f239bc71fc88ad17ddb5de45fc36a38896e1dbe1075a3260562a13db733a18e820f1442  IBMPlexSans-VF.ttf
+cea00ba67a618a50f318ed0baa07085e1dffe1ab90875ed7b5295d81040a62b6d71f08b1c416d78c0ebff324676c778855ac90d595082a8eb222dc7afb31d552  IBMPlexMono-Regular.ttf
+8bc228f89d2045902e2dc71387a6bef978d6b1f27467c5419f0d405803d5037f0c157ec2dd40d95bcc5b93d9f17e59c0c00701f88a1ffb18a9050d2564cf19a2  IBMPlexMono-Medium.ttf
+8d43cc056e8227e46033d910c327ce182ef41b172768eb535474bffc64621bfc2e23374eca1e2733fc82632bbf156463a8a475f3c740d5b80c6b559f66c63333  IBMPlexMono-SemiBold.ttf
+353119284bd5546e6ed87d7491268de2d934c5e44ef5c7479f94f03c45eba0af3f90126ffd5cb93b04d166a674d8a209b6e9369c81511567e53b03f2ae40b69c  SourceSerif4-VF.ttf
+8d584c0773a5c4e7934ef8167f9728c82f08f170587464276ae75490177c8e137a99b3beb89eb8d13648056d959296313c33336202eab3b536a5259ad8e23005  SourceSerif4-Italic-VF.ttf
+0880fa145b219868b30a54f34675ad3199dc229a0836526683dca6bb648c075623bc24e4274211888e9f1203bc4c6f2be706725b6d9f09d2725cbb7eaafc8176  NotoEmoji-VF.ttf
+"

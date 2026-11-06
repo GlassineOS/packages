@@ -1,0 +1,101 @@
+# Maintainer: Moritz Meißelbach <moritz@glassine.org>
+# sway-glassine from GlassineOS/sway (branch glassine/1.10.1): sway with the e-ink output
+# backend that hands frames to glassine-epdd-desktop, touch gestures, popup hints and
+# the pen's ink areas. Our wlroots 0.18.2 patches (the GLES grey output and its fixes,
+# in the sway repository's wlroots/) are linked in statically, so the system's sway and
+# libwlroots stay as they are: this package installs only /usr/bin/sway-glassine, the
+# binary the GlassineOS session starts. swaymsg and the rest come from Alpine's sway.
+pkgname=sway-glassine
+pkgver=1.10.1_git20261102
+# GlassineOS/sway glassine/1.10.1
+_commit=07538243a11de7116f31b8c4abf5ab6bd7de4bbd
+_wlrver=0.18.2
+pkgrel=0
+pkgdesc="sway with the GlassineOS e-ink output backend, gestures and ink areas"
+url="https://github.com/GlassineOS/sway"
+arch="all"
+license="MIT"
+# wlroots starts Xwayland for X clients
+depends="xwayland"
+makedepends="
+	basu-dev
+	cairo-dev
+	eudev-dev
+	gdk-pixbuf-dev
+	glib-dev
+	hwdata-dev
+	json-c-dev
+	lcms2-dev
+	libdisplay-info-dev
+	libdrm-dev
+	libevdev-dev
+	libinput-dev
+	librsvg-dev
+	libseat-dev
+	libxkbcommon-dev
+	libxres-dev
+	linux-headers
+	linux-pam-dev
+	mesa-dev
+	meson
+	pango-dev
+	pcre2-dev
+	pixman-dev
+	wayland-dev
+	wayland-protocols
+	xcb-util-renderutil-dev
+	xcb-util-wm-dev
+	xwayland-dev
+	"
+# the host tests in test/ are not ported to this tree yet
+options="!check"
+source="sway-$_commit.tar.gz::https://github.com/GlassineOS/sway/archive/$_commit.tar.gz
+	https://gitlab.freedesktop.org/wlroots/wlroots/-/archive/$_wlrver/wlroots-$_wlrver.tar.gz
+	"
+builddir="$srcdir/sway-$_commit"
+
+prepare() {
+	default_prepare
+	mkdir -p subprojects
+	rm -rf subprojects/wlroots
+	mv "$srcdir/wlroots-$_wlrver" subprojects/wlroots
+	local p
+	for p in wlroots/0*.patch; do
+		msg "wlroots: ${p#wlroots/}"
+		patch -d subprojects/wlroots -p1 -s < "$p"
+	done
+}
+
+build() {
+	# the frame path was tuned at -O2; abuild's default -Os is slower
+	export CFLAGS="${CFLAGS/-Os/-O2}"
+	abuild-meson \
+		-Dsd-bus-provider=basu \
+		-Dman-pages=disabled \
+		-Dswaybar=false \
+		-Dswaynag=false \
+		-Dwerror=false \
+		-Dwlroots:werror=false \
+		--force-fallback-for=wlroots \
+		-Dwlroots:default_library=static \
+		-Dwlroots:examples=false \
+		-Dwlroots:renderers=gles2 \
+		-Dwlroots:backends=drm,libinput \
+		-Dwlroots:xwayland=enabled \
+		-Dwlroots:color-management=enabled \
+		-Dwlroots:session=enabled \
+		-Dwlroots:libliftoff=disabled \
+		. output
+	meson compile -C output sway/sway
+}
+
+package() {
+	install -Dm755 output/sway/sway "$pkgdir"/usr/bin/sway-glassine
+	install -Dm644 LICENSE "$pkgdir"/usr/share/licenses/$pkgname/LICENSE
+	install -Dm644 subprojects/wlroots/LICENSE "$pkgdir"/usr/share/licenses/$pkgname/LICENSE.wlroots
+}
+
+sha512sums="
+ab4034dad9a75fb068f942569f1e7403f789aeb66e090fb6f4e27d563d471d652b1280708f93b1c1c4ae0a400a776dfb166d546316ece453faee58ed6e698618  sway-07538243a11de7116f31b8c4abf5ab6bd7de4bbd.tar.gz
+59b0889f65e9cd914273c87a6547fa865577c34e26ddb178974be665721ac77d7146b0f45f341b64a44eb4b0bd689fab16d7972130eac443260181ff2b5a9ef7  wlroots-0.18.2.tar.gz
+"

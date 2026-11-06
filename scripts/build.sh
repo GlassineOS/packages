@@ -63,6 +63,12 @@ chown -R builder "$home"
 for d in "$@"; do
 	grep -qxF "$home/repo/${d%%/*}" /etc/apk/repositories || echo "$home/repo/${d%%/*}" >> /etc/apk/repositories
 done
+# a recipe that depends on a package of this repository which isn't rebuilt now gets
+# it from the published repository (nothing is published for every arch: then only
+# packages built in this run resolve)
+cp keys/glassine-keys/*.rsa.pub /etc/apk/keys/
+echo "https://pkgs.glassine.org/alpine/$BRANCH/glassine" >> /etc/apk/repositories
+apk update -q || echo "no published repository for $arch"
 for d in "$@"; do
 	echo "::group::abuild $d"
 	su builder -c "cd '$home/work/$d' && REPODEST='$home/repo' abuild -r"

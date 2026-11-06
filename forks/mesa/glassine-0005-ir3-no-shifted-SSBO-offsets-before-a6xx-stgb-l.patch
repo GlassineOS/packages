@@ -1,0 +1,36 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Moritz=20Mei=C3=9Felbach?= <moritz@glassine.org>
+Date: Thu, 5 Nov 2026 20:38:49 +0100
+Subject: [PATCH 5/7] ir3: no shifted SSBO offsets before a6xx (stgb/ldgb take
+ bytes)
+
+Since nir_lower_explicit_io can emit shifted offsets (max_offset_shift), the
+SSBO intrinsics reaching ir3_nir_lower_io_offsets carry an offset in dwords
+(offset_shift 2). On a6xx the lowered intrinsic only uses the dword source.
+a4xx/a5xx also take a byte address: ir3_a4xx.c passes src[] "byte_offset" to
+stgb, ldgb and the atomics, and with a shifted offset it holds dwords, so
+every access goes to a quarter of its address.
+
+On the Adreno 509 (Boox Note Air 1, Mesa 26.1.6) every compute SSBO store
+lands in the wrong place: invocations 0-3 all hit dword 0. Keep byte offsets
+on gen < 6, as before the option existed.
+
+Assisted-by: Claude Opus 5.5 (unreviewed; tested only on the A509)
+---
+ src/freedreno/ir3/ir3_compiler.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/freedreno/ir3/ir3_compiler.c b/src/freedreno/ir3/ir3_compiler.c
+index 94810102c07..bc9c15d67b7 100644
+--- a/src/freedreno/ir3/ir3_compiler.c
++++ b/src/freedreno/ir3/ir3_compiler.c
+@@ -452,7 +452,8 @@ ir3_compiler_create(struct fd_device *dev, const struct fd_dev_id *dev_id,
+       BITFIELD_BIT(MESA_SHADER_TESS_CTRL) |
+       BITFIELD_BIT(MESA_SHADER_TESS_EVAL);
+    compiler->nir_options.support_indirect_outputs = (uint8_t)BITFIELD_MASK(MESA_SHADER_STAGES);
+-   compiler->nir_options.max_offset_shift = ir3_nir_max_offset_shift;
++   if (compiler->gen >= 6)
++      compiler->nir_options.max_offset_shift = ir3_nir_max_offset_shift;
+ 
+    if (!options->disable_cache)
+       ir3_disk_cache_init(compiler);

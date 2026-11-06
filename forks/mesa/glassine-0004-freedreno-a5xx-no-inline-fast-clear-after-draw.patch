@@ -1,0 +1,48 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Moritz=20Mei=C3=9Felbach?= <moritz@glassine.org>
+Date: Thu, 5 Nov 2026 20:38:49 +0100
+Subject: [PATCH 4/7] freedreno/a5xx: no inline fast clear after draws in a
+ batch
+
+fd5_clear inlines a BLIT-event fast clear wherever the clear falls in the
+draw IB.  a6xx splits a new subpass when the clear comes after draws
+(fd6_clear); a5xx has no subpasses.  On the Adreno 509 (Boox Note Air 1,
+Mesa 25.1.9) that mid-batch clear goes wrong in sysmem (bypass) rendering:
+
+A probe, 64x64 FBO, 64 passes of clear + 2 blended quads without a flush
+(about 10 batches): GMEM matches a CPU reference; FD_MESA_DEBUG=sysmem gets
+3600 px wrong (max channel error 139).  Flat blended quads are wrong the same
+way, opaque quads and clear-only are right, one pass or one batch per pass is
+right on both paths.  A CACHE_FLUSH_TS + WFI before the inline clear does not
+help.  Falling back to the generic u_blitter clear (a draw) when the batch
+already has draws makes sysmem give exactly the GMEM result; GMEM output is
+unchanged.
+
+Assisted-by: Claude Opus 5.5 (unreviewed; tested only on the A509)
+---
+ src/gallium/drivers/freedreno/a5xx/fd5_draw.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/src/gallium/drivers/freedreno/a5xx/fd5_draw.c b/src/gallium/drivers/freedreno/a5xx/fd5_draw.c
+index f0dff4ee3c9..b796de00dc2 100644
+--- a/src/gallium/drivers/freedreno/a5xx/fd5_draw.c
++++ b/src/gallium/drivers/freedreno/a5xx/fd5_draw.c
+@@ -229,6 +229,18 @@ fd5_clear(struct fd_context *ctx, enum fd_buffer_mask buffers,
+        is_z32(pfb->zsbuf.format))
+       return false;
+ 
++   /* A clear after draws in the same batch would be inlined here as a
++    * BLIT-event fast clear in the middle of the draw IB.  a6xx splits a new
++    * subpass for that case (fd6_clear); a5xx has no subpasses.  On the A509
++    * the inline clear mis-orders against the batch's earlier blended draws
++    * in sysmem (bypass) rendering: later draws blend against the wrong
++    * destination.  Take the generic u_blitter clear (a draw, ordered like
++    * any other) instead, the route a5xx already uses for Z32.  A clear that
++    * is the batch's first op stays a fast clear.
++    */
++   if (ctx->batch->num_draws > 0)
++      return false;
++
+    fd5_emit_render_cntl(ctx, true, false);
+ 
+    if (buffers & FD_BUFFER_COLOR) {

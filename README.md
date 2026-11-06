@@ -10,11 +10,13 @@ CI that builds, signs and publishes them to
 | `keys/` | `glassine-keys`: the repository's public signing key + the repository line |
 | `device/` | kernels and device packages (`linux-glassine-sdm660`, …) |
 | `glassine/` | our own software |
-| `forks/` | patched upstream software, renamed and installed beside the original (`sway-glassine` installs `/usr/bin/sway-glassine`, Alpine's `sway` stays) |
+| `forks/` | patched upstream software, renamed and installed beside the original (`sway-glassine` installs `/usr/bin/sway-glassine`, Alpine's `sway` stays), or an Alpine recipe rebuilt with our patches under Alpine's names (`mesa`) |
 
 A recipe directory has the name of its main package. Sources come from tags or pinned
 commits of the GlassineOS repositories (checksum in the recipe); patches live in those
-repositories, not here, apart from packaging fixes.
+repositories, not here, apart from packaging fixes. The exception is a recipe that rebuilds
+Alpine's own package with a few patches (`forks/mesa`): it keeps Alpine's recipe and source
+tarball, and the patches sit next to it, as in aports.
 
 ## Branches
 

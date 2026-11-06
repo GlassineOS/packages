@@ -1,0 +1,49 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Moritz=20Mei=C3=9Felbach?= <moritz@glassine.org>
+Date: Thu, 5 Nov 2026 20:38:49 +0100
+Subject: [PATCH 3/7] freedreno/a5xx: no 2D blitter on the A509 (blits write
+ nothing)
+
+On the Adreno 509 (Boox Note Air 1, Mesa 25.1.9) fd5_blitter_blit's CP_BLIT
+completes without a fault and leaves the destination unchanged:
+
+- texture uploads into a texture the GPU still references (staging BO +
+  fd_blit_from_staging) are lost, at every size (64x64 to 1872x1404) and in
+  R32UI and RGBA8; with the staging path forced for idle textures too, the
+  first full upload is lost as well;
+- glCopyBufferSubData (emit_blit_buffer) leaves the destination buffer as it
+  was (4 KiB to 256 KiB, aligned and unaligned offsets).
+
+A WFI after END2D, CCU color/depth flushes plus a UCHE flush after the blit,
+and RB_DBG_ECO_CNTL bit 9 (the kernel's 1-SP clock-gating workaround, which
+fd5_emit_restore overwrites) each and together change nothing.
+FD_MESA_DEBUG=noblit (u_blitter on the 3D pipe) gets all of them right, so do
+the same for the A509 without the env var. Other a5xx parts are untouched
+(a530 CI passes the 2D path).
+
+Test: an upload probe (full|part|small, sync 0, R32UI/RGBA8; bufcopy):
+stock 8/8 and 6/6 wrong, patched 0 wrong, 0 GPU faults.
+
+Assisted-by: Claude Opus 5.5 (unreviewed; tested only on the A509)
+---
+ src/gallium/drivers/freedreno/a5xx/fd5_context.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/src/gallium/drivers/freedreno/a5xx/fd5_context.c b/src/gallium/drivers/freedreno/a5xx/fd5_context.c
+index 3fda7cb5320..eb1500fe467 100644
+--- a/src/gallium/drivers/freedreno/a5xx/fd5_context.c
++++ b/src/gallium/drivers/freedreno/a5xx/fd5_context.c
+@@ -74,7 +74,12 @@ fd5_context_create(struct pipe_screen *pscreen, void *priv,
+    fd5_prog_init(pctx);
+    fd5_emit_init(pctx);
+ 
+-   if (!FD_DBG(NOBLIT))
++   /* The 2D engine (CP_BLIT) writes nothing on the A509: texture and buffer
++    * blits complete without a fault and leave the destination unchanged,
++    * idle or busy, with or without a WFI and CCU/cache flushes after the
++    * blit.  Use the 3D path (u_blitter) there instead.
++    */
++   if (!FD_DBG(NOBLIT) && screen->gpu_id != 509)
+       fd5_ctx->base.blit = fd5_blitter_blit;
+ 
+    pctx = fd_context_init(&fd5_ctx->base, pscreen, priv, flags);

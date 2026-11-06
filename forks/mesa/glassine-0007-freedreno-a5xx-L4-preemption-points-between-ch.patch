@@ -1,0 +1,287 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Moritz=20Mei=C3=9Felbach?= <moritz@glassine.org>
+Date: Thu, 5 Nov 2026 21:19:25 +0100
+Subject: [PATCH 7/7] freedreno/a5xx: L4, preemption points between chunks
+ inside one submit (FD_L4)
+
+With FD_L4=1 a chunked sysmem batch (FD_CHUNK_*) stays in one submit, and
+between its chunks the CP gets a preemption point: CP_SET_RENDER_MODE with
+a save area and a restore IB, local preemption off, and a
+CP_CONTEXT_SWITCH_YIELD with an embedded resume IB. A higher-priority ring
+then gets the GPU in the middle of an app's job, not only at a submit
+boundary, and the cost is paid only when a switch happens. Without
+FD_CHUNK_US or FD_CHUNK_DRAWS it cuts every 8 draws. Default off.
+
+Each chunk boundary holds nothing in flight: the previous chunk's fini has
+flushed the CCU, the next chunk's prep re-emits the context restore, and
+the chunk re-emits all draw state.
+
+The restore IB and the yield's IB follow the sequence the stock Android
+driver emits on this device (traced with freedreno's libwrap, decoded with
+cffdump), with our buffer addresses; the resume IB is ours.
+
+Measured on the A509 (Mesa 25.1.9): about 3 % at rest; OpenMW -12 % and
+GNOME Software -13 % content frames while the panel engine is busy.
+
+Assisted-by: Claude Opus 5.5 (unreviewed; tested only on the A509)
+---
+ .../drivers/freedreno/a5xx/fd5_context.c      | 48 +++++++++++++++++++
+ .../drivers/freedreno/a5xx/fd5_context.h      | 16 +++++++
+ src/gallium/drivers/freedreno/a5xx/fd5_gmem.c | 46 ++++++++++++++++++
+ .../drivers/freedreno/freedreno_context.h     |  5 ++
+ .../drivers/freedreno/freedreno_gmem.c        |  4 +-
+ .../drivers/freedreno/freedreno_screen.c      |  8 +++-
+ .../drivers/freedreno/freedreno_util.h        | 10 ++++
+ 7 files changed, 134 insertions(+), 3 deletions(-)
+
+diff --git a/src/gallium/drivers/freedreno/a5xx/fd5_context.c b/src/gallium/drivers/freedreno/a5xx/fd5_context.c
+index eb1500fe467..abd90741ee4 100644
+--- a/src/gallium/drivers/freedreno/a5xx/fd5_context.c
++++ b/src/gallium/drivers/freedreno/a5xx/fd5_context.c
+@@ -21,6 +21,49 @@
+ #include "fd5_texture.h"
+ #include "fd5_zsa.h"
+ 
++/* L4 (FD_L4): the buffers of the preemption point that
++ * fd5_emit_sysmem_yield() emits between two chunks: the 15-dword restore IB
++ * the CP runs on a switch (GRAS_LRZ_CNTL, a CP_SCRATCH marker,
++ * CP_WIDE_REG_WRITE of the save area, a flag), the 19-dword IB the yield
++ * names, and the resume IB (WFI, the sysmem RB_CCU_CNTL: another context may
++ * leave the GMEM layout behind).
++ * The restore IB and the yield's IB follow the sequence the stock Android
++ * driver emits on this device (traced with freedreno's libwrap, decoded with
++ * cffdump), with our buffer addresses; the resume IB is ours.
++ */
++static void
++fd5_l4_init(struct fd5_context *fd5_ctx)
++{
++   fd5_ctx->l4_bo = fd_bo_new(fd5_ctx->base.screen->dev, FD5_L4_SZ, 0, "l4");
++   uint32_t *m = fd_bo_map(fd5_ctx->l4_bo);
++   memset(m, 0, FD5_L4_SZ);
++   uint64_t va = fd_bo_get_iova(fd5_ctx->l4_bo);
++   uint64_t wide = va + FD5_L4_WIDE, flag = va + FD5_L4_FLAG;
++
++   uint32_t *r = m + FD5_L4_RIB / 4;
++   *r++ = 0x48e10001; *r++ = 0x00000008;      /* GRAS_LRZ_CNTL = 8 */
++   *r++ = 0x400b7801; *r++ = 0x00000001;      /* CP_SCRATCH[0] = 1 */
++   *r++ = 0x70928000;                         /* CP_WAIT_MEM_WRITES */
++   *r++ = 0x70f48005; *r++ = 0xc0000b78;      /* CP_WIDE_REG_WRITE */
++   *r++ = (uint32_t)wide; *r++ = (uint32_t)(wide >> 32);
++   *r++ = (uint32_t)va; *r++ = (uint32_t)(va >> 32);
++   *r++ = 0x703d8003;                         /* CP_MEM_WRITE flag = 1 */
++   *r++ = (uint32_t)flag; *r++ = (uint32_t)(flag >> 32);
++   *r++ = 0x00000001;
++   assert(r - (m + FD5_L4_RIB / 4) == 15);
++
++   uint32_t *q = m + FD5_L4_RIB19 / 4;
++   *q++ = 0x48e10001; *q++ = 0x00000008;      /* GRAS_LRZ_CNTL = 8 */
++   *q++ = 0x70460001; *q++ = 0x00000026;      /* CP_EVENT_WRITE 0x26 */
++   memcpy(q, m + FD5_L4_RIB / 4, 15 * 4);
++
++   q = m + FD5_L4_RES / 4;
++   *q++ = pm4_pkt7_hdr(CP_WAIT_FOR_IDLE, 0);
++   *q++ = pm4_pkt4_hdr(REG_A5XX_RB_CCU_CNTL, 1);
++   *q++ = 0x10000000;
++   fd5_ctx->l4_res_len = q - (m + FD5_L4_RES / 4);
++}
++
+ static void
+ fd5_context_destroy(struct pipe_context *pctx) in_dt
+ {
+@@ -33,6 +76,8 @@ fd5_context_destroy(struct pipe_context *pctx) in_dt
+ 
+    fd_bo_del(fd5_ctx->vsc_size_mem);
+    fd_bo_del(fd5_ctx->blit_mem);
++   if (fd5_ctx->l4_bo)
++      fd_bo_del(fd5_ctx->l4_bo);
+ 
+    fd_context_cleanup_common_vbos(&fd5_ctx->base);
+ 
+@@ -96,6 +141,9 @@ fd5_context_create(struct pipe_screen *pscreen, void *priv,
+ 
+    fd_context_setup_common_vbos(&fd5_ctx->base);
+ 
++   if (fd_chunk.l4)
++      fd5_l4_init(fd5_ctx);
++
+    fd5_query_context_init(pctx);
+ 
+    fd5_ctx->border_color_uploader =
+diff --git a/src/gallium/drivers/freedreno/a5xx/fd5_context.h b/src/gallium/drivers/freedreno/a5xx/fd5_context.h
+index cfc32af41c3..1af1b1f596a 100644
+--- a/src/gallium/drivers/freedreno/a5xx/fd5_context.h
++++ b/src/gallium/drivers/freedreno/a5xx/fd5_context.h
+@@ -38,8 +38,24 @@ struct fd5_context {
+ 
+    /* cached state about current emitted shader program (3d): */
+    unsigned max_loc;
++
++   /* L4 (FD_L4): the preemption buffers, see fd5_l4_init() */
++   struct fd_bo *l4_bo;
++   unsigned l4_res_len;
+ };
+ 
++/* l4_bo layout: the CP's save area (CP_SET_RENDER_MODE ADDR_0 and the yield's
++ * first operand), the 15-dword restore IB (ADDR_1), the buffers it names, the
++ * yield's 19-dword IB and its embedded resume IB.
++ */
++#define FD5_L4_SAVE   0x00000 /* 64 KB */
++#define FD5_L4_RIB    0x10000 /* 15 dwords */
++#define FD5_L4_WIDE   0x10200
++#define FD5_L4_FLAG   0x10400
++#define FD5_L4_RIB19  0x10500 /* 19 dwords */
++#define FD5_L4_RES    0x10600
++#define FD5_L4_SZ     0x11000
++
+ static inline struct fd5_context *
+ fd5_context(struct fd_context *ctx)
+ {
+diff --git a/src/gallium/drivers/freedreno/a5xx/fd5_gmem.c b/src/gallium/drivers/freedreno/a5xx/fd5_gmem.c
+index b6407fee0ef..0db7362e169 100644
+--- a/src/gallium/drivers/freedreno/a5xx/fd5_gmem.c
++++ b/src/gallium/drivers/freedreno/a5xx/fd5_gmem.c
+@@ -807,6 +807,51 @@ fd5_emit_sysmem_fini(struct fd_batch *batch)
+    fd5_event_write(batch, ring, PC_CCU_FLUSH_DEPTH_TS, true);
+ }
+ 
++/* L4 (FD_L4): a chunk boundary without a new submit.
++ * The previous chunk's fini has flushed the colour/depth CCU, the next
++ * chunk's prep re-emits the whole context restore, and the chunk re-emits
++ * all draw state (fd_context_all_dirty at the cut).  So this point holds
++ * nothing in flight, like a GMEM bin start: a
++ * checkpoint with the save area and the restore IB, local preemption off,
++ * and the 12-dword yield at IB1 level with its embedded resume IB.
++ */
++static bool
++fd5_emit_sysmem_yield(struct fd_batch *batch) assert_dt
++{
++   struct fd5_context *fd5_ctx = fd5_context(batch->ctx);
++   struct fd_ringbuffer *ring = batch->gmem;
++   struct fd_bo *bo = fd5_ctx->l4_bo;
++
++   if (!bo || batch->nondraw)
++      return false;
++
++   OUT_WFI5(ring);
++
++   OUT_PKT7(ring, CP_SET_RENDER_MODE, 8);
++   OUT_RING(ring, CP_SET_RENDER_MODE_0_MODE(BYPASS));
++   OUT_RELOC(ring, bo, FD5_L4_SAVE, 0, 0);    /* ADDR_0: save area */
++   OUT_RING(ring, 0);
++   OUT_RING(ring, 0x3);
++   OUT_RING(ring, 15);                        /* ADDR_1 length */
++   OUT_RELOC(ring, bo, FD5_L4_RIB, 0, 0);     /* ADDR_1: restore IB */
++
++   OUT_PKT7(ring, CP_PREEMPT_ENABLE_LOCAL, 1);
++   OUT_RING(ring, 0);
++
++   OUT_PKT7(ring, CP_CONTEXT_SWITCH_YIELD, 11);
++   OUT_RELOC(ring, bo, FD5_L4_SAVE, 0, 0);
++   OUT_RING(ring, 0);                         /* render mode: BYPASS */
++   OUT_RING(ring, 3);
++   OUT_RING(ring, 19);
++   OUT_RELOC(ring, bo, FD5_L4_RIB19, 0, 0);
++   OUT_RING(ring, pm4_pkt7_hdr(CP_INDIRECT_BUFFER, 3));
++   OUT_RELOC(ring, bo, FD5_L4_RES, 0, 0);
++   OUT_RING(ring, fd5_ctx->l4_res_len);
++
++   fd_reset_wfi(batch);
++   return true;
++}
++
+ void
+ fd5_gmem_init(struct pipe_context *pctx) disable_thread_safety_analysis
+ {
+@@ -820,4 +865,5 @@ fd5_gmem_init(struct pipe_context *pctx) disable_thread_safety_analysis
+    ctx->emit_tile_fini = fd5_emit_tile_fini;
+    ctx->emit_sysmem_prep = fd5_emit_sysmem_prep;
+    ctx->emit_sysmem_fini = fd5_emit_sysmem_fini;
++   ctx->emit_sysmem_yield = fd5_emit_sysmem_yield;
+ }
+diff --git a/src/gallium/drivers/freedreno/freedreno_context.h b/src/gallium/drivers/freedreno/freedreno_context.h
+index d184c65be03..de9cea70ec7 100644
+--- a/src/gallium/drivers/freedreno/freedreno_context.h
++++ b/src/gallium/drivers/freedreno/freedreno_context.h
+@@ -576,6 +576,11 @@ struct fd_context {
+    void (*emit_sysmem_prep)(struct fd_batch *batch) dt;
+    void (*emit_sysmem)(struct fd_batch *batch) dt;
+    void (*emit_sysmem_fini)(struct fd_batch *batch) dt;
++   /* L4 (optional): a preemption point between two chunks of a
++    * chunked sysmem batch, inside one submit.  Returns false to fall back
++    * to a submit boundary.
++    */
++   bool (*emit_sysmem_yield)(struct fd_batch *batch) dt;
+ 
+    /* draw: */
+    void (*draw_vbos)(struct fd_context *ctx, const struct pipe_draw_info *info,
+diff --git a/src/gallium/drivers/freedreno/freedreno_gmem.c b/src/gallium/drivers/freedreno/freedreno_gmem.c
+index 90114ca6922..d138a8e2f17 100644
+--- a/src/gallium/drivers/freedreno/freedreno_gmem.c
++++ b/src/gallium/drivers/freedreno/freedreno_gmem.c
+@@ -673,7 +673,9 @@ render_sysmem_chunks(struct fd_batch *batch) assert_dt
+          if (cut) {
+             if (ctx->emit_sysmem_fini)
+                ctx->emit_sysmem_fini(batch);
+-            fd_ringbuffer_split(batch->gmem);
++            /* L4: a yield inside the submit instead (FD_L4) */
++            if (!(ctx->emit_sysmem_yield && ctx->emit_sysmem_yield(batch)))
++               fd_ringbuffer_split(batch->gmem);
+             batch->chunk_idx++;
+             /* FD_CHUNK_ADAPT: a timestamp slot for the next chunk */
+             fd_batch_chunk_ts_begin(batch, batch->chunk_idx);
+diff --git a/src/gallium/drivers/freedreno/freedreno_screen.c b/src/gallium/drivers/freedreno/freedreno_screen.c
+index a2ab4203e4a..a32e3f907a9 100644
+--- a/src/gallium/drivers/freedreno/freedreno_screen.c
++++ b/src/gallium/drivers/freedreno/freedreno_screen.c
+@@ -888,6 +888,9 @@ __debug_init(void)
+          fd_chunk.vert_ps = b;
+       }
+    }
++   fd_chunk.l4 = debug_get_bool_option("FD_L4", false);
++   if (fd_chunk.l4 && !fd_chunk.budget_us && !fd_chunk.max_draws)
++      fd_chunk.max_draws = 8;
+    fd_chunk.enabled = fd_chunk.budget_us || fd_chunk.max_draws;
+    fd_chunk.adapt = fd_chunk.budget_us &&
+                     debug_get_bool_option("FD_CHUNK_ADAPT", true);
+@@ -909,10 +912,11 @@ __debug_init(void)
+       fd_chunk.busy_on = fd_chunk.busy_off = 0;
+    if (fd_chunk.enabled)
+       mesa_logi("freedreno: chunked submits: budget %u us, max %u draws, "
+-                "cost %u ns/draw + %u ps/vertex, adapt %s, busy gate %u,%u",
++                "cost %u ns/draw + %u ps/vertex, adapt %s, busy gate %u,%u%s",
+                 fd_chunk.budget_us, fd_chunk.max_draws, fd_chunk.draw_ns,
+                 fd_chunk.vert_ps, fd_chunk.adapt ? "on" : "off",
+-                fd_chunk.busy_on, fd_chunk.busy_off);
++                fd_chunk.busy_on, fd_chunk.busy_off,
++                fd_chunk.l4 ? ", L4 yields in one submit" : "");
+ }
+ 
+ static void
+diff --git a/src/gallium/drivers/freedreno/freedreno_util.h b/src/gallium/drivers/freedreno/freedreno_util.h
+index b42a9764c27..3a6c502cb1b 100644
+--- a/src/gallium/drivers/freedreno/freedreno_util.h
++++ b/src/gallium/drivers/freedreno/freedreno_util.h
+@@ -121,6 +121,14 @@ extern bool fd_binning_enabled;
+  *                       fps, and the panel engine missed no frame either way).
+  *   FD_CHUNK_NOMERGE=1  (drm layer) one ioctl per gallium batch, no merging
+  *                       of deferred submits
++ *   FD_L4=1             (a5xx, sysmem) keep a chunked batch in ONE submit and
++ *                       put a preemption point (CP_CONTEXT_SWITCH_YIELD with
++ *                       a save area and a resume IB) between the chunks
++ *                       instead of a submit
++ *                       boundary.  Higher-priority rings (the e-ink engine,
++ *                       sway) get the GPU mid-job; the cost is paid only
++ *                       when a switch happens.  Without FD_CHUNK_DRAWS /
++ *                       FD_CHUNK_US it cuts every 8 draws.
+  */
+ struct fd_chunk_config {
+    bool enabled;
+@@ -131,6 +139,8 @@ struct fd_chunk_config {
+    uint32_t vert_ps;
+    /* FD_CHUNK_BUSY: the busy gate's on/off thresholds, percent (0 = off) */
+    uint32_t busy_on, busy_off;
++   /* FD_L4: chunks as preemption points inside one submit (a5xx) */
++   bool l4;
+ };
+ extern struct fd_chunk_config fd_chunk;
+ 

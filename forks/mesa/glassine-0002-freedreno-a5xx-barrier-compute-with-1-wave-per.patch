@@ -1,0 +1,95 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Moritz=20Mei=C3=9Felbach?= <moritz@glassine.org>
+Date: Thu, 5 Nov 2026 20:38:49 +0100
+Subject: [PATCH 2/7] freedreno/a5xx: barrier() compute with >1 wave per
+ workgroup (A509 hangs)
+
+Two fixes, found on the Adreno 509 (Boox Note Air 1, Mesa 25.1.9; ported to 26.1.6):
+
+1. fd5_compute.c wrote 0x1 to HLSQ_CS_CNTL_1. Like a6xx's LINEARLOCALIDREGID,
+   it names a register (0x1 = r0.y), which ir3 never asks for. With it, compute
+   shaders with barrier() and more than one wave per workgroup hang the GPU
+   (hang detect, status E40801C1) or compute garbage, e.g. a 12.8 KB shared
+   array at 128 invocations. regid(63, 0) (none) fixes them; plain shaders
+   without barriers saw no difference in their invocation ids
+   (a probe over 5 workgroup shapes).
+
+2. ir3_ra.c: calc_limit_pressure_for_cs_with_barrier only capped the register
+   pressure with merged registers (a6xx+); a4xx/a5xx have a separate half
+   file, and RA always sized it RA_HALF_SIZE. A shader with 48 half vec4 at
+   128 invocations could not keep all its waves resident and hung at the
+   barrier. Cap full and half per wave there and bound the half file by the
+   cap.
+
+With both, a 128-invocation layered error-diffusion shader with 8 barriers
+is byte-exact and fault-free; stock faults on every dispatch. 256 invocations
+still fault (a third limit, open).
+
+Assisted-by: Claude Opus 5.5 (unreviewed; tested only on the A509)
+---
+ src/freedreno/ir3/ir3_ra.c                    | 24 ++++++++++++-------
+ .../drivers/freedreno/a5xx/fd5_compute.c      |  7 +++++-
+ 2 files changed, 22 insertions(+), 9 deletions(-)
+
+diff --git a/src/freedreno/ir3/ir3_ra.c b/src/freedreno/ir3/ir3_ra.c
+index 1f951591808..8e7e37d334c 100644
+--- a/src/freedreno/ir3/ir3_ra.c
++++ b/src/freedreno/ir3/ir3_ra.c
+@@ -2738,14 +2738,20 @@ calc_limit_pressure_for_cs_with_barrier(struct ir3_shader_variant *v,
+ 
+    uint32_t half_regs_per_thread = vec4_regs_per_thread * 4 * 2;
+ 
+-   if (limit_pressure->full > half_regs_per_thread) {
+-      if (v->mergedregs) {
++   if (v->mergedregs) {
++      if (limit_pressure->full > half_regs_per_thread)
+          limit_pressure->full = half_regs_per_thread;
+-      } else {
+-         /* TODO: Handle !mergedregs case, probably we would have to do this
+-          * after the first register pressure pass.
+-          */
+-      }
++   } else {
++      /* a4xx/a5xx: the full and the half register files are separate, each
++       * of reg_size_vec4 parts; both must leave room for every wave of the
++       * workgroup, or the waves that don't fit never reach the barrier and
++       * the GPU hangs (A509: 48 half vec4 at 128 invocations). Full pressure
++       * counts in half-register units, half pressure in half registers.
++       */
++      if (limit_pressure->full > half_regs_per_thread)
++         limit_pressure->full = half_regs_per_thread;
++      if (limit_pressure->half > vec4_regs_per_thread * 4)
++         limit_pressure->half = vec4_regs_per_thread * 4;
+    }
+ }
+ 
+@@ -2876,8 +2882,10 @@ ir3_ra(struct ir3_shader_variant *v)
+    assert(ctx->full.size <= RA_FULL_SIZE);
+    d("full size: %u", ctx->full.size);
+ 
++   /* (separate half file: the barrier cap must bound the file, not only the
++    * pressure, or the allocator still spreads into the top half registers) */
+    if (!v->mergedregs)
+-      ctx->half.size = RA_HALF_SIZE;
++      ctx->half.size = MIN2(RA_HALF_SIZE, limit_pressure.half);
+ 
+    ctx->shared.size = RA_SHARED_SIZE;
+ 
+diff --git a/src/gallium/drivers/freedreno/a5xx/fd5_compute.c b/src/gallium/drivers/freedreno/a5xx/fd5_compute.c
+index 64f6199d8dc..f9209b16c9e 100644
+--- a/src/gallium/drivers/freedreno/a5xx/fd5_compute.c
++++ b/src/gallium/drivers/freedreno/a5xx/fd5_compute.c
+@@ -80,7 +80,12 @@ cs_program_emit(struct fd_context *ctx, struct fd_ringbuffer *ring, struct ir3_s
+                      A5XX_HLSQ_CS_CNTL_0_UNK0(regid(63, 0)) |
+                      A5XX_HLSQ_CS_CNTL_0_UNK1(regid(63, 0)) |
+                      A5XX_HLSQ_CS_CNTL_0_LOCALIDREGID(local_invocation_id));
+-   OUT_RING(ring, 0x1); /* HLSQ_CS_CNTL_1 */
++   /* HLSQ_CS_CNTL_1 holds the linear local id register, as on a6xx
++    * (LINEARLOCALIDREGID): ir3 never asks for it, so r63.x = none. The old
++    * 0x1 (r0.y) made compute shaders with barrier() and more than one wave
++    * per workgroup hang the A509 (hang detect) or compute garbage.
++    */
++   OUT_RING(ring, regid(63, 0)); /* HLSQ_CS_CNTL_1 */
+ 
+    if (instrlen > 0)
+       fd5_emit_shader(ring, v);

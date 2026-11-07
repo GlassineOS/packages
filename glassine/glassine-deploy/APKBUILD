@@ -1,20 +1,24 @@
 # Maintainer: Moritz Meißelbach <moritz@glassine.org>
 # glassine-deploy from GlassineOS/boot: the deployments tool, the shutdown switch, the
-# boot-success step and hibernation. The device package provides
+# boot-success step and hibernation, and glassine: the root lock and the apk wrapper
+# (also installed as /usr/sbin/apk, before apk-tools' /sbin/apk on PATH; outside a
+# deployment it runs apk-tools unchanged). The device package provides
 # /etc/glassine/deploy.conf. The formats and exit codes are in boot's docs/deployments.md.
 pkgname=glassine-deploy
-pkgver=0.1.0
+pkgver=0.3.0
 # GlassineOS/boot main
-_commit=266faf337e52818d96c3e8e613b37fc21211f403
+_commit=f96e040fa571ca68de092618fc6609f8f54f68b7
 pkgrel=0
 pkgdesc="GlassineOS deployments: read-only bases, tried updates, reset, hibernation"
 url="https://github.com/GlassineOS/boot"
 arch="noarch"
 license="GPL-2.0-or-later"
 # debugfs and filefrag are in e2fsprogs-extra; ash, flock, awk and blkid in busybox
-depends="busybox e2fsprogs e2fsprogs-extra openrc"
-# the tests need privileged Docker (real btrfs and overlayfs); they run in boot's CI
-options="!check"
+depends="apk-tools busybox e2fsprogs e2fsprogs-extra openrc"
+# the tests need privileged Docker (real btrfs and overlayfs); they run in boot's CI.
+# !tracedeps: no automatic provides, or /usr/sbin/apk would provide cmd:apk and
+# conflict with apk-tools (scripts only: the depends above are complete)
+options="!check !tracedeps"
 subpackages="$pkgname-doc"
 install="$pkgname.post-install $pkgname.pre-deinstall"
 source="boot-$_commit.tar.gz::https://github.com/GlassineOS/boot/archive/$_commit.tar.gz"
@@ -22,13 +26,14 @@ builddir="$srcdir/boot-$_commit"
 
 package() {
 	local f
-	for f in glassine-deploy glassine-deploy-accept glassine-switch-hook glassine-hibernate; do
+	for f in glassine glassine-deploy glassine-deploy-accept glassine-switch-hook glassine-hibernate; do
 		install -Dm755 sbin/$f "$pkgdir"/usr/sbin/$f
 	done
 	for f in glassine-switch glassine-deploy-accept; do
 		install -Dm755 openrc/$f "$pkgdir"/etc/init.d/$f
 	done
-	for f in glassine-state.sh glassine-root.sh; do
+	ln -s glassine "$pkgdir"/usr/sbin/apk
+	for f in glassine-state.sh glassine-root.sh glassine-accounts.sh; do
 		install -Dm644 lib/$f "$pkgdir"/usr/lib/glassine-boot/$f
 	done
 	install -Dm644 conf/deploy.conf.example "$pkgdir"/usr/share/glassine-boot/deploy.conf.example
@@ -37,5 +42,5 @@ package() {
 	install -d "$pkgdir"/etc/glassine-bootimg/health.d "$pkgdir"/etc/glassine/hibernate.d
 }
 sha512sums="
-233393bdb45efb1da1d144eb4876937a76d157ba60523a0cd89cab7f77a55cefee09da8477be5de34f7d711a9f634ebb30408eeb2d9e2ed70e95bb536c2455da  boot-266faf337e52818d96c3e8e613b37fc21211f403.tar.gz
+eb1dbfd5aace9dce547e3b105c036547f35c6fbef9881f4fc888a1cc58445dbba2b5c1b08c7b504bc58fe3432fe8153931b72fd8abbf3600a49d207cfc28ee1b  boot-f96e040fa571ca68de092618fc6609f8f54f68b7.tar.gz
 "

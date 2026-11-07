@@ -12,7 +12,7 @@ pkgdesc="Onyx Boox Note Air: clock, power modes, e-ink splash, panel adapter, de
 url="https://github.com/GlassineOS/packages"
 arch="noarch"
 license="GPL-2.0-or-later"
-# e2fsprogs: dumpe2fs; e2fsprogs-extra: debugfs (the seed reads ext4 without mounting)
+# e2fsprogs-extra (it needs e2fsprogs): dumpe2fs and debugfs (the seed reads ext4 without mounting)
 depends="busybox e2fsprogs e2fsprogs-extra glassine-epdd"
 source="device-seed.conf
 	epd.conf

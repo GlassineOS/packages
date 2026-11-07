@@ -1,0 +1,11 @@
+#!/bin/sh
+# Health check (glassine-bootimg / glassine-deploy-accept health.d): the panel's
+# waveform is where /etc/glassine/epd.conf says, and looks like one. A boot
+# without it has no display. First line of the output = the reason.
+conf=${GLASSINE_EPD_CONF:-/etc/glassine/epd.conf}
+w=$(sed -n 's/#.*//; s/^waveform=//p' "$conf" 2>/dev/null | sed 's/[[:space:]]*$//' | tail -n1)
+[ -n "$w" ] || { echo "no waveform= in $conf"; exit 1; }
+[ -f "$w" ] || { echo "no waveform at $w"; exit 1; }
+n=$(wc -c < "$w")
+[ "$n" -ge 256 ] && [ "$(od -A n -t u4 -j 4 -N 4 "$w" | tr -d ' ')" = "$n" ] ||
+	{ echo "waveform at $w is damaged"; exit 1; }

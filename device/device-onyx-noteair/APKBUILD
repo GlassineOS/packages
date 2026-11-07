@@ -1,22 +1,31 @@
 # Maintainer: Moritz Meißelbach <moritz@glassine.org>
 # The Onyx Boox Note Air's system services and scripts. Its configuration files
-# (sysctl, sound routing) are in the device stage of GlassineOS/images.
+# (sysctl, sound routing) are in the device stage of GlassineOS/images, except the
+# panel adapter (/etc/glassine/epd.conf) and the device seed's list, which go with
+# the scripts that read them. The images device stage adds glassine-device-seed to
+# sysinit.
 pkgname=device-onyx-noteair
-pkgver=1
+pkgver=2
 pkgrel=0
 builddir="$srcdir"
-pkgdesc="Onyx Boox Note Air: clock, power modes, e-ink splash, boot tuning"
+pkgdesc="Onyx Boox Note Air: clock, power modes, e-ink splash, panel adapter, device seed, boot tuning"
 url="https://github.com/GlassineOS/packages"
 arch="noarch"
 license="GPL-2.0-or-later"
-depends="busybox glassine-epdd"
-source="glassine-clock
+# e2fsprogs: dumpe2fs; e2fsprogs-extra: debugfs (the seed reads ext4 without mounting)
+depends="busybox e2fsprogs e2fsprogs-extra glassine-epdd"
+source="device-seed.conf
+	epd.conf
+	glassine-clock
 	glassine-clock.initd
 	glassine-clock.nm-dispatcher
 	glassine-ddr
+	glassine-device-seed
+	glassine-device-seed.initd
 	glassine-session.confd
 	glassine-splash.initd
 	onyx-noteair-tune.initd
+	waveform.health
 	"
 
 build() {
@@ -27,7 +36,8 @@ build() {
 check() {
 	local f t rc
 	for f in glassine-clock glassine-clock.initd glassine-clock.nm-dispatcher glassine-ddr \
-		glassine-session.confd glassine-splash.initd onyx-noteair-tune.initd; do
+		glassine-device-seed glassine-device-seed.initd glassine-session.confd \
+		glassine-splash.initd onyx-noteair-tune.initd waveform.health; do
 		sh -n "$srcdir/$f" || return 1
 	done
 	t="$srcdir/t"; rm -rf "$t"; mkdir -p "$t/p" "$t/cg" "$t/pip"
@@ -63,11 +73,99 @@ check() {
 	rc=0; ddr >/dev/null || rc=$?
 	[ $rc = 1 ] || { echo "ddr: no voter is not an error"; return 1; }
 	[ "$(cat "$t/cg/cpu.uclamp.min")" = 0 ] || { echo "ddr: no voter, no floor"; return 1; }
+
+	_check_seed "$t/seed"
+}
+
+# the device seed on plain directories (GLASSINE_SEED_FAKE): first seed, verify,
+# a damaged copy, a source that can't be read, a refresh, a cut-off write, the
+# journal, a bad waveform, the health check
+_check_seed() {
+	local d="$1" f=$1/fake rc h
+	rm -rf "$d"; mkdir -p "$f/src/system_a/waveform" "$d/run"
+	# a waveform with a correct header: the file's length at offset 4
+	_wbf() {
+		local n=$1
+		{ printf 'WBF\0'; printf "\\$(printf %o $((n & 255)))\\$(printf %o $((n >> 8 & 255)))\\$(printf %o $((n >> 16 & 255)))\\$(printf %o $((n >> 24 & 255)))"
+		  head -c $((n - 8)) /dev/urandom; } > "$2"
+	}
+	_wbf 4096 "$f/src/system_a/waveform/eink_waveform.wbf"
+	printf 'DEVICE_PART=vendor_b\nwaveform.wbf system_a:/waveform/eink_waveform.wbf wbf # the panel\n' > "$d/conf"
+	seed() { GLASSINE_SEED_CONF="$d/conf" GLASSINE_SEED_RUN="$d/run" GLASSINE_SEED_FAKE="$f" \
+		sh "$srcdir/glassine-device-seed" "$@" 2>>"$d/log"; }
+	S=$f/part/glassine
+
+	seed || { echo "seed: first seed failed"; cat "$d/log"; return 1; }
+	cmp -s "$S/waveform.wbf" "$f/src/system_a/waveform/eink_waveform.wbf" || { echo "seed: copy differs"; return 1; }
+	[ "$(head -n1 "$S/manifest")" = format=1 ] && grep -q "^waveform.wbf system_a:/waveform/eink_waveform.wbf $(sha256sum "$S/waveform.wbf" | cut -d' ' -f1)\$" "$S/manifest" \
+		|| { echo "seed: manifest"; cat "$S/manifest"; return 1; }
+	[ -f "$d/run/device/waveform.wbf" ] || { echo "seed: not bound"; return 1; }
+	ls -a "$S" | grep -q '\.new' && { echo "seed: temp files left"; return 1; }
+
+	# bound: nothing to do, even with the source gone
+	mv "$f/src/system_a" "$f/src/gone"
+	seed || { echo "seed: a bound seed is redone"; return 1; }
+	seed status >/dev/null || { echo "seed: status of a complete seed"; return 1; }
+	# the boot again (nothing bound): verified, bound, the source not needed
+	rm "$d/run/device"; seed || { echo "seed: verify without the source"; return 1; }
+	[ -f "$d/run/device/waveform.wbf" ] || { echo "seed: verified seed not bound"; return 1; }
+
+	# a damaged copy and no source: incomplete, nothing bound
+	rm "$d/run/device"; echo x >> "$S/waveform.wbf"
+	rc=0; seed || rc=$?
+	[ $rc = 1 ] && [ ! -e "$d/run/device" ] || { echo "seed: a damaged copy is bound (rc $rc)"; return 1; }
+	# the source back: copied again
+	mv "$f/src/gone" "$f/src/system_a"
+	seed || { echo "seed: damaged copy not replaced"; return 1; }
+	cmp -s "$S/waveform.wbf" "$f/src/system_a/waveform/eink_waveform.wbf" || { echo "seed: replaced copy differs"; return 1; }
+
+	# refresh: read again; a source that can't be read keeps the seed's copy
+	_wbf 8192 "$f/src/system_a/waveform/eink_waveform.wbf"
+	seed refresh || { echo "seed: refresh failed"; return 1; }
+	[ "$(wc -c < "$S/waveform.wbf")" = 8192 ] || { echo "seed: refresh did not copy"; return 1; }
+	mv "$f/src/system_a" "$f/src/gone"
+	rc=0; seed refresh || rc=$?
+	mv "$f/src/gone" "$f/src/system_a"
+	[ $rc = 1 ] && [ "$(wc -c < "$S/waveform.wbf")" = 8192 ] && [ -f "$d/run/device/waveform.wbf" ] \
+		|| { echo "seed: refresh without a source lost the copy (rc $rc)"; return 1; }
+
+	# cut off before the manifest's rename: no manifest = no seed, copied again
+	rm "$d/run/device" "$S/manifest"; : > "$S/.manifest.new"
+	seed || { echo "seed: no manifest not redone"; return 1; }
+	[ -f "$S/manifest" ] || { echo "seed: no manifest written"; return 1; }
+
+	# the journal needs recovery: replayed, then verified
+	rm "$d/run/device"; : > "$f/needs_recovery"
+	seed || { echo "seed: journal"; return 1; }
+	[ ! -e "$f/needs_recovery" ] && grep -q "replaying" "$d/log" || { echo "seed: journal not replayed"; return 1; }
+
+	# a source that isn't a waveform: not copied, nothing bound
+	rm -rf "$f/part" "$d/run/device"; head -c 4096 /dev/zero > "$f/src/system_a/waveform/eink_waveform.wbf"
+	rc=0; seed || rc=$?
+	[ $rc = 1 ] && [ ! -e "$S/waveform.wbf" ] || { echo "seed: a bad waveform was copied (rc $rc)"; return 1; }
+
+	# the health check against a seed path
+	h="$srcdir/waveform.health"
+	_wbf 4096 "$d/w.wbf"
+	printf 'waveform=/nowhere # comment\nwaveform=%s  \n' "$d/w.wbf" > "$d/epd.conf"
+	GLASSINE_EPD_CONF="$d/epd.conf" sh "$h" || { echo "health: a good waveform"; return 1; }
+	echo x >> "$d/w.wbf"
+	[ "$(GLASSINE_EPD_CONF="$d/epd.conf" sh "$h")" = "waveform at $d/w.wbf is damaged" ] || { echo "health: damaged"; return 1; }
+	rm "$d/w.wbf"
+	[ "$(GLASSINE_EPD_CONF="$d/epd.conf" sh "$h")" = "no waveform at $d/w.wbf" ] || { echo "health: missing"; return 1; }
+	: > "$d/epd.conf"
+	GLASSINE_EPD_CONF="$d/epd.conf" sh "$h" >/dev/null && { echo "health: no waveform= passes"; return 1; }
+	return 0
 }
 
 package() {
 	install -Dm755 "$srcdir"/glassine-clock "$pkgdir"/usr/sbin/glassine-clock
 	install -Dm755 "$srcdir"/glassine-ddr "$pkgdir"/usr/sbin/glassine-ddr
+	install -Dm755 "$srcdir"/glassine-device-seed "$pkgdir"/usr/sbin/glassine-device-seed
+	install -Dm755 "$srcdir"/glassine-device-seed.initd "$pkgdir"/etc/init.d/glassine-device-seed
+	install -Dm644 "$srcdir"/device-seed.conf "$pkgdir"/etc/glassine/device-seed.conf
+	install -Dm644 "$srcdir"/epd.conf "$pkgdir"/etc/glassine/epd.conf
+	install -Dm755 "$srcdir"/waveform.health "$pkgdir"/etc/glassine-bootimg/health.d/50-waveform
 	install -Dm755 "$srcdir"/glassine-clock.initd "$pkgdir"/etc/init.d/glassine-clock
 	install -Dm755 "$srcdir"/glassine-splash.initd "$pkgdir"/etc/init.d/glassine-splash
 	install -Dm755 "$srcdir"/onyx-noteair-tune.initd "$pkgdir"/etc/init.d/onyx-noteair-tune
@@ -77,11 +175,16 @@ package() {
 	install -Dm644 "$srcdir"/splash.pgm "$pkgdir"/usr/share/glassine/splash.pgm
 }
 sha512sums="
+bfb3dad2f51753062df3f0ff7814d271d8edca6a00276c7625f48e54e65d980eaabdcbf62c17f4489fbbaad21d0c8783f98fe79fe06803754eea0ae30a182aea  device-seed.conf
+5f76149893ce3c94ca0d9849566c31303324069122a9b35356415222a90f6fd5992d3ee72f485be730116bd9b6cf158abb8dd60da51b688ad3ac36f0c166f4eb  epd.conf
 9706b48fca84aa8f0714f30994c648264612bdd078a21a51c9dbd5195445e2f3654068532c07818e9606e881c31a9820000a8dce7085dc00e9e69af1ef85abc1  glassine-clock
 25a60f5ab6c9a5592d33a107fc2a33c8eefc8601e9aa22ca965801cf1ec6db3e6152472591e8dd36460edec119466908c717c8195ecb34c44188f8ef69bca859  glassine-clock.initd
 35fabd4c4f1f6d5bd28fd1a0b0502e8dc969502ecddfdbd792338ed812ef867f5b893ab7c3bc5d3d63bbffcc0d1b570f8f2b19ff3c9142fe12e2f244b649ab34  glassine-clock.nm-dispatcher
 5946fc2ce4e8311e5be331a9c9bd305942340436bb4c7864e101365f633342f0b56c7a26a0e6453cfeff46dfb3a0c99db0a0f6c40f541e1562a1ed44338ce3d5  glassine-ddr
+309d24d9e5e3472a53d0d65be460d8e9403345d4c7ddd8010dbc68ea8475a070b22111fad08adf2c7c44dbff5c9a0fccc9e1d594847da4f75aa1f3d2a1ec283d  glassine-device-seed
+554a68313a19d93e40a81c82aedcca1249cfbb54ddb299c2833f3a9d07c5aa2a2a3f0776627283d51cb93c7310fc1fb87bc60a728b976603e0476c0bcdc827c6  glassine-device-seed.initd
 1f3f012fcfebda0093884eb3e7e6ecef835268f3b5a7646bf4690aa8970cefd4b7641fa64d36e86664ec31c098823acd22ed3ae6a453c0dce4ca0f08a66395af  glassine-session.confd
 5fa5ae86cbb297ce05fb06b34048d2c86796cc312a314eba1e24558b7d8f5ef0e7c119a29379e58b6d87cb8797776d58d75828d9d2dd163acb55857f7dbf5fb9  glassine-splash.initd
 c82a04ed6cf8391dbbdd81c0fc5c1b3a3aec1cb87f68d4afbcf70c03f1098d29115273e3f2f409be0d3282fb6ddaeedc0918859e0fa1a20bce88e721af8daca2  onyx-noteair-tune.initd
+46dade4c54d7a4d91c26a658d0546a4a32583fa1e8cab12eab60b5bf6f710f6d6a2ef634c0b9dd95a087b1e86032bf7f4a56fcfd2a53a3f1759497ad63e6ba55  waveform.health
 "

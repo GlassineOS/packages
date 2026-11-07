@@ -1,0 +1,18 @@
+#!/sbin/openrc-run
+# The device seed (glassine-device-seed): the panel's waveform from the device's
+# own storage, bound read-only on /run/glassine/device. In sysinit, before the
+# device manager's coldplug, so the panel and the drivers find it. Nothing to do
+# when the boot has bound it already.
+description="Device data seed: files from the device's own storage"
+
+depend() {
+	after devfs
+	before udev-trigger mdev hwdrivers glassine-splash
+	keyword -docker -lxc -podman
+}
+
+start() {
+	ebegin "Checking the device seed"
+	timeout 120 /usr/sbin/glassine-device-seed
+	eend $? "The device seed is incomplete (glassine-device-seed status)"
+}

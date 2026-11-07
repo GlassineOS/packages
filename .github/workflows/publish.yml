@@ -78,3 +78,9 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v5
+        with:
+          # the default 10 minutes is sometimes too short for GitHub's file sync; the
+          # action cancels a deployment that times out, and a rerun from the same
+          # commit reuses its ID (pages_build_version = the commit) and has stayed stuck:
+          # publish from a newer commit instead
+          timeout: 1200000

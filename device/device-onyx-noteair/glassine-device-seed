@@ -7,8 +7,17 @@
 #
 #   glassine-device-seed            verify the seed, copy what's missing or wrong,
 #                                   bind it read-only on /run/glassine/device
-#   glassine-device-seed refresh    copy every file again from its source
+#   glassine-device-seed refresh    ask for a refresh: every file is copied again
+#                                   from its source at the next boot
+#   glassine-device-seed refresh --now   the refresh right away (boot, recovery)
 #   glassine-device-seed status     what the seed holds; exit 0 = complete
+#
+# A refresh waits for the next boot because DEVICE_PART can't be mounted
+# read-write while any mount namespace (an app's sandbox, a container) still
+# holds a read-only mount of it, and on a running system they do: their copies
+# of the mount table outlive an unmount here. At boot the service runs before
+# any of them, and a pending request (REQUEST below) makes it refresh even when
+# the seed is already bound.
 #
 # The seed is glassine/ on DEVICE_PART: a manifest (format=1, then one line per
 # file: name, source, sha256), the files next to it. The list of files and
@@ -28,6 +37,7 @@ RUN=${GLASSINE_SEED_RUN:-/run/glassine}
 FAKE=${GLASSINE_SEED_FAKE:-}
 SEED=$RUN/device
 MNT=$RUN/device-part
+REQUEST=${GLASSINE_SEED_REQUEST:-/var/lib/glassine/device-seed.refresh}
 
 say() {
 	echo "glassine-device-seed: $*" >&2
@@ -287,9 +297,20 @@ EOF
 }
 
 main() {
-	local verb=${1:-start} rc=0
-	case $verb in start|refresh|status) ;; *) echo "usage: glassine-device-seed [refresh|status]" >&2; exit 2 ;; esac
+	local verb=${1:-start} rc=0 force=""
+	case $verb:${2:-} in
+	start:|status:|refresh:--now) ;;
+	refresh:)
+		read_conf
+		mkdir -p "${REQUEST%/*}" && : > "$REQUEST" || { say "cannot write $REQUEST"; exit 1; }
+		echo "glassine-device-seed: the seed is refreshed at the next boot"
+		exit 0 ;;
+	*) echo "usage: glassine-device-seed [refresh [--now]|status]" >&2; exit 2 ;;
+	esac
 	read_conf
+	if [ "$verb" = refresh ]; then force=1
+	elif [ "$verb" = start ] && [ -e "$REQUEST" ]; then force=1; say "refresh asked for"
+	fi
 	if [ -z "$FAKE" ]; then
 		DEV=$(part_dev "$DEVICE_PART") || { say "no partition $DEVICE_PART"; exit 1; }
 	fi
@@ -301,7 +322,7 @@ main() {
 		fi
 		part_mount ro || exit 1; status; rc=$?; part_umount; exit $rc
 	fi
-	if [ "$verb" = start ] && bound; then exit 0; fi
+	if [ "$verb" = start ] && [ -z "$force" ] && bound; then exit 0; fi
 	unbind_seed; part_umount
 	if needs_recovery; then
 		if mounted_elsewhere; then say "$DEVICE_PART's journal needs recovery, but it is mounted elsewhere"; exit 1; fi
@@ -310,9 +331,11 @@ main() {
 		[ -z "$FAKE" ] || rm -f "$FAKE/needs_recovery"
 	fi
 	part_mount ro || { say "cannot mount $DEVICE_PART"; exit 1; }
-	if [ "$verb" = refresh ] || ! seed_complete; then
-		seed "$([ "$verb" = refresh ] && echo 1)" || rc=1
+	if [ -n "$force" ] || ! seed_complete; then
+		seed "$force" || rc=1
 	fi
+	# a request is done once every file was read again (else the next boot tries again)
+	[ -n "$force" ] && [ $rc = 0 ] && rm -f "$REQUEST"
 	if manifest_ok; then
 		bind_seed || { say "cannot bind the seed"; exit 1; }
 	else

@@ -136,15 +136,33 @@ _check_seed() {
 
 	# a write that fails (cp stops after 100 bytes of the temp file): no temp
 	# file left, the old copy verified and bound
-	printf '#!/bin/sh\ncase $2 in */glassine/.*.new) head -c 100 "$1" > "$2"; exit 1 ;; esac\nexec %s "$@"\n' \
-		"$(command -v cp)" > "$d/bin/cp"; chmod +x "$d/bin/cp"
-	_wbf 4096 "$f/src/system_a/waveform/eink_waveform.wbf"
+	_cpfail() {
+		printf '#!/bin/sh\ncase $2 in */glassine/.*.new) head -c 100 "$1" > "$2"; exit 1 ;; esac\nexec %s "$@"\n' \
+			"$(command -v cp)" > "$d/bin/cp"; chmod +x "$d/bin/cp"
+	}
+	_cpfail; _wbf 4096 "$f/src/system_a/waveform/eink_waveform.wbf"
 	rc=0; seed refresh || rc=$?
 	rm "$d/bin/cp"
 	[ $rc = 1 ] && grep -q "writing the seed failed" "$d/log" || { echo "seed: a failed write is not a failure (rc $rc)"; return 1; }
 	ls -a "$S" | grep -q '\.new' && { echo "seed: a failed write left its temp file"; ls -a "$S"; return 1; }
 	[ "$(wc -c < "$d/run/device/waveform.wbf")" = 8192 ] && seed status >/dev/null \
 		|| { echo "seed: the old copy is not bound after a failed write"; return 1; }
+	# the list names another file and its write fails: the file the old manifest
+	# names is kept, and the old seed bound
+	mv "$d/conf" "$d/conf.orig"
+	printf 'DEVICE_PART=vendor_b\nother.wbf system_a:/waveform/eink_waveform.wbf wbf\n' > "$d/conf"
+	_cpfail; rm "$d/run/device"
+	rc=0; seed || rc=$?
+	rm "$d/bin/cp"; mv "$d/conf.orig" "$d/conf"
+	[ $rc = 1 ] && [ -f "$S/waveform.wbf" ] && [ "$(wc -c < "$d/run/device/waveform.wbf")" = 8192 ] \
+		|| { echo "seed: a failed write removed what the old manifest names (rc $rc)"; ls -a "$S"; return 1; }
+
+	# the read-write mount is refused: the seed is mounted read-only again and bound
+	: > "$f/rw_fails"
+	rc=0; seed refresh || rc=$?
+	rm "$f/rw_fails"
+	[ $rc = 1 ] && grep -q "cannot mount vendor_b read-write" "$d/log" && [ "$(wc -c < "$d/run/device/waveform.wbf")" = 8192 ] \
+		&& seed status >/dev/null || { echo "seed: not bound again after a refused read-write mount (rc $rc)"; return 1; }
 
 	# cut off before the manifest's rename: no manifest = no seed, copied again
 	rm "$d/run/device" "$S/manifest"; : > "$S/.manifest.new"
@@ -209,7 +227,7 @@ bfb3dad2f51753062df3f0ff7814d271d8edca6a00276c7625f48e54e65d980eaabdcbf62c17f448
 25a60f5ab6c9a5592d33a107fc2a33c8eefc8601e9aa22ca965801cf1ec6db3e6152472591e8dd36460edec119466908c717c8195ecb34c44188f8ef69bca859  glassine-clock.initd
 35fabd4c4f1f6d5bd28fd1a0b0502e8dc969502ecddfdbd792338ed812ef867f5b893ab7c3bc5d3d63bbffcc0d1b570f8f2b19ff3c9142fe12e2f244b649ab34  glassine-clock.nm-dispatcher
 5946fc2ce4e8311e5be331a9c9bd305942340436bb4c7864e101365f633342f0b56c7a26a0e6453cfeff46dfb3a0c99db0a0f6c40f541e1562a1ed44338ce3d5  glassine-ddr
-57d5214c7b9523f952ad02fa6958dc7af06046c96b71c7624b60315776b3265deae15cb287762ff9b9c0ea0791a2d440b91449e9603fdc4aa02d5a10da34650d  glassine-device-seed
+6926b97b9e55ded69701dcab828937f3b38ad07fd6f3599fcddd5b4379af2f9a90f09c99f484c65cd75062ab6938a566154af4357799951d03cf114b18834c4a  glassine-device-seed
 554a68313a19d93e40a81c82aedcca1249cfbb54ddb299c2833f3a9d07c5aa2a2a3f0776627283d51cb93c7310fc1fb87bc60a728b976603e0476c0bcdc827c6  glassine-device-seed.initd
 1f3f012fcfebda0093884eb3e7e6ecef835268f3b5a7646bf4690aa8970cefd4b7641fa64d36e86664ec31c098823acd22ed3ae6a453c0dce4ca0f08a66395af  glassine-session.confd
 5fa5ae86cbb297ce05fb06b34048d2c86796cc312a314eba1e24558b7d8f5ef0e7c119a29379e58b6d87cb8797776d58d75828d9d2dd163acb55857f7dbf5fb9  glassine-splash.initd

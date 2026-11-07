@@ -121,6 +121,8 @@ read_source() {
 DEV=
 part_mount() {
 	if [ -n "$FAKE" ]; then
+		# $FAKE/rw_fails: a read-write mount that the kernel refuses
+		[ "$1" = rw ] && [ -e "$FAKE/rw_fails" ] && return 1
 		mkdir -p "$FAKE/part"; rm -f "$MNT"; ln -s "$FAKE/part" "$MNT"
 		return
 	fi
@@ -244,7 +246,7 @@ EOF
 		say "$DEVICE_PART is mounted elsewhere; not writing the seed"
 		rm -rf "$tmp"; part_mount ro; return 1
 	fi
-	part_mount rw || { say "cannot mount $DEVICE_PART read-write"; rm -rf "$tmp"; return 1; }
+	part_mount rw || { say "cannot mount $DEVICE_PART read-write"; rm -rf "$tmp"; part_mount ro; return 1; }
 	(
 		mkdir -p "$MNT/glassine" || exit 1
 		for n in $fresh; do
@@ -256,12 +258,15 @@ EOF
 	l=$?
 	# the temp files of a write that failed: never visible in the bound seed
 	rm -f "$MNT"/glassine/.*.new
-	# files the list no longer names
-	for n in "$MNT"/glassine/*; do
-		[ -f "$n" ] || continue
-		case $n in */manifest) continue ;; esac
-		grep -q "^${n##*/} " "$tmp/manifest.new" || rm -f "$n"
-	done
+	# files the list no longer names, once the new manifest is in place (after a
+	# failed write the old one stays, and it may name them)
+	if [ $l = 0 ]; then
+		for n in "$MNT"/glassine/*; do
+			[ -f "$n" ] || continue
+			case $n in */manifest) continue ;; esac
+			grep -q "^${n##*/} " "$tmp/manifest.new" || rm -f "$n"
+		done
+	fi
 	sync
 	part_umount; rm -rf "$tmp"
 	[ $l = 0 ] || { say "writing the seed failed"; part_mount ro; return 1; }

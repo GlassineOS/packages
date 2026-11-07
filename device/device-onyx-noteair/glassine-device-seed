@@ -254,6 +254,8 @@ EOF
 			mv -f "$MNT/glassine/.manifest.new" "$MNT/glassine/manifest" && sync
 	)
 	l=$?
+	# the temp files of a write that failed: never visible in the bound seed
+	rm -f "$MNT"/glassine/.*.new
 	# files the list no longer names
 	for n in "$MNT"/glassine/*; do
 		[ -f "$n" ] || continue

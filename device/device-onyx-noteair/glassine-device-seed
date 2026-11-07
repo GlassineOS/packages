@@ -232,6 +232,7 @@ EOF
 		echo format=1
 		for n in $keep; do man_line "$n"; done
 		while read -r n s c; do
+			[ -n "$n" ] || continue
 			case " $fresh " in *" $n "*) ;; *) continue ;; esac
 			echo "$n $s $(sha256sum "$tmp/$n" | cut -d' ' -f1)"
 		done <<EOF

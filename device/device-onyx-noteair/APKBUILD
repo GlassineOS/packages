@@ -102,6 +102,7 @@ _check_seed() {
 	cmp -s "$S/waveform.wbf" "$f/src/system_a/waveform/eink_waveform.wbf" || { echo "seed: copy differs"; return 1; }
 	[ "$(head -n1 "$S/manifest")" = format=1 ] && grep -q "^waveform.wbf system_a:/waveform/eink_waveform.wbf $(sha256sum "$S/waveform.wbf" | cut -d' ' -f1)\$" "$S/manifest" \
 		|| { echo "seed: manifest"; cat "$S/manifest"; return 1; }
+	[ "$(wc -l < "$S/manifest")" = 2 ] || { echo "seed: manifest is not format=1 and one line per file"; cat -A "$S/manifest"; return 1; }
 	[ -f "$d/run/device/waveform.wbf" ] || { echo "seed: not bound"; return 1; }
 	ls -a "$S" | grep -q '\.new' && { echo "seed: temp files left"; return 1; }
 
@@ -126,6 +127,7 @@ _check_seed() {
 	_wbf 8192 "$f/src/system_a/waveform/eink_waveform.wbf"
 	seed refresh || { echo "seed: refresh failed"; return 1; }
 	[ "$(wc -c < "$S/waveform.wbf")" = 8192 ] || { echo "seed: refresh did not copy"; return 1; }
+	[ "$(wc -l < "$S/manifest")" = 2 ] || { echo "seed: refresh's manifest"; cat -A "$S/manifest"; return 1; }
 	mv "$f/src/system_a" "$f/src/gone"
 	rc=0; seed refresh || rc=$?
 	mv "$f/src/gone" "$f/src/system_a"
@@ -195,7 +197,7 @@ bfb3dad2f51753062df3f0ff7814d271d8edca6a00276c7625f48e54e65d980eaabdcbf62c17f448
 25a60f5ab6c9a5592d33a107fc2a33c8eefc8601e9aa22ca965801cf1ec6db3e6152472591e8dd36460edec119466908c717c8195ecb34c44188f8ef69bca859  glassine-clock.initd
 35fabd4c4f1f6d5bd28fd1a0b0502e8dc969502ecddfdbd792338ed812ef867f5b893ab7c3bc5d3d63bbffcc0d1b570f8f2b19ff3c9142fe12e2f244b649ab34  glassine-clock.nm-dispatcher
 5946fc2ce4e8311e5be331a9c9bd305942340436bb4c7864e101365f633342f0b56c7a26a0e6453cfeff46dfb3a0c99db0a0f6c40f541e1562a1ed44338ce3d5  glassine-ddr
-d74effce950ca1becda0098839e162559eb5d8aeaa6c6653a26de4ad1c6c4b300a719e5bc3f49d0b7311a76791d4196f9f195029a2e4f700ca15ebdc3c0c1c5a  glassine-device-seed
+3bd0667b2e57887c7873fb6c0090ee0635fa21ee20a21805ab262711a8c3d8a5889e3d1ca087dbe3a0cae12ba7781898b4d63fa2193ddfb8c717b340f5ae3d66  glassine-device-seed
 554a68313a19d93e40a81c82aedcca1249cfbb54ddb299c2833f3a9d07c5aa2a2a3f0776627283d51cb93c7310fc1fb87bc60a728b976603e0476c0bcdc827c6  glassine-device-seed.initd
 1f3f012fcfebda0093884eb3e7e6ecef835268f3b5a7646bf4690aa8970cefd4b7641fa64d36e86664ec31c098823acd22ed3ae6a453c0dce4ca0f08a66395af  glassine-session.confd
 5fa5ae86cbb297ce05fb06b34048d2c86796cc312a314eba1e24558b7d8f5ef0e7c119a29379e58b6d87cb8797776d58d75828d9d2dd163acb55857f7dbf5fb9  glassine-splash.initd

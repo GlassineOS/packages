@@ -1,0 +1,81 @@
+#!/bin/sh
+# glassine-ddr: the power mode of the Onyx Boox Note Air. glassine-settings saves
+# and applies it (through glassine-settings-root), the session applies it at
+# every start (/etc/conf.d/glassine-session). The mode sets:
+#   - the CPU's vote for the DDR clock (qcom_cpufreq_hw: ddr_table and
+#     ddr_min/max_kbps; only kernels with the voter have them),
+#   - the session's CPU floor (cpu.uclamp.min of its cgroup): 60 % except in
+#     saver. 60 % does not fit the slow cluster, so the session's threads wake on
+#     the fast cores instead of ramping up on a slow one. Only runnable threads
+#     are clamped; idle and suspend are unaffected, the cost is energy per wakeup,
+#   - the panel daemon's touch boost: every CPU's minimum clock at its top until
+#     150 ms after the last touch, pen or key input; off in saver,
+#   - the touch controller's active -> low-power timeout (TT21000 parameter 0x4e,
+#     ms, chip default 1000): after that much idle the chip scans slowly and
+#     withholds about 8 reports at the next touch, a stalled scroll start.
+#     8000 in performance (about the chip's limit), 3000 in balanced, 1000 in
+#     saver. RAM only: a controller reset restores 1000, hence every session start.
+#
+#   glassine-ddr             apply the saved mode (/etc/glassine/ddr; missing or
+#                            unknown = performance)
+#   glassine-ddr LEVEL       save LEVEL and apply it
+#   glassine-ddr epdd-opts   print the panel daemon's options for the saved mode
+#   LEVEL: performance  the C-max table and a full DDR floor while awake
+#          balanced     the C-max table (the device tree's peak bandwidths)
+#          saver        the stock table (average bandwidths); kernels without
+#                       ddr_table: approximated by a 2086000 kB/s cap
+# Every write votes at once; asleep, the vote is gone.
+P=${GLASSINE_DDR_PARAMS:-/sys/module/qcom_cpufreq_hw/parameters}
+UCG=${GLASSINE_UCLAMP_CG:-/sys/fs/cgroup/openrc.glassine-session}
+PIPS=${GLASSINE_PIP_GLOB:-/sys/bus/i2c/drivers/cyttsp5/*/pip}
+CTL=${GLASSINE_EPDD_CTL:-/run/glassine-epdd-desktop.ctl}
+SAVED=${GLASSINE_DDR_SAVED:-/etc/glassine/ddr}
+
+uclamp() {
+	local v=60
+	[ "$1" = saver ] && v=0
+	[ -w "$UCG/cpu.uclamp.min" ] && echo $v > "$UCG/cpu.uclamp.min"
+	return 0
+}
+saved() { lvl=performance; [ -r "$SAVED" ] && read -r lvl < "$SAVED"; }
+epdd_opts() { [ "$1" = saver ] && echo boost=0 || echo boost=150; }
+touch_timeout() {
+	local pip ms le
+	# shellcheck disable=SC2086
+	pip=$(ls $PIPS 2>/dev/null | head -1)
+	[ -n "$pip" ] || return 0
+	case "$1" in performance) ms=8000 ;; balanced) ms=3000 ;; *) ms=1000 ;; esac
+	le="$(printf %02x $((ms & 255))) $(printf %02x $((ms >> 8)))"
+	# set, read back, retry: a late reply can shift the answers by one
+	for _ in 1 2 3; do
+		echo "06 4e 02 $le" > "$pip" 2>/dev/null
+		echo "05 4e" > "$pip" 2>/dev/null
+		case "$(cat "$pip")" in *" 4e 02 $le") return 0 ;; esac
+	done
+	echo "glassine-ddr: touch timeout $ms not confirmed" >&2
+}
+
+case "${1:-}" in
+	epdd-opts) saved; epdd_opts "$lvl"; exit 0 ;;
+	"") saved ;;
+	performance|balanced|saver) lvl=$1; mkdir -p "${SAVED%/*}"; echo "$lvl" > "$SAVED" ;;
+	*) echo "usage: $0 [performance|balanced|saver|epdd-opts]" >&2; exit 2 ;;
+esac
+case "$lvl" in performance|balanced|saver) ;; *) lvl=performance ;; esac
+uclamp "$lvl"                   # before the voter check: kernels without it get the floor too
+touch_timeout "$lvl"
+# a running panel daemon gets the boost at once (a FIFO write blocks without a reader: timeout)
+[ -p "$CTL" ] && pidof glassine-epdd-desktop >/dev/null && timeout 2 sh -c "echo $(epdd_opts "$lvl") > $CTL"
+case "$lvl" in
+	balanced) table=cmax min=0 max=0 ;;
+	saver) table=stock min=0 max=0 ;;
+	*) table=cmax min=5163000 max=0 ;;
+esac
+[ -w "$P/ddr_min_kbps" ] || { echo "glassine-ddr: no DDR voter on this kernel" >&2; exit 1; }
+if [ -w "$P/ddr_table" ]; then
+	echo $table > "$P/ddr_table" || exit 1
+elif [ $table = stock ]; then
+	max=2086000
+fi
+# table first, then max, then min: a lowered min never sits under an old cap
+echo $max > "$P/ddr_max_kbps" && echo $min > "$P/ddr_min_kbps" && echo "$lvl"

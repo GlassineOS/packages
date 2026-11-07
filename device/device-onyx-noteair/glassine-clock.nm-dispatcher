@@ -1,0 +1,4 @@
+#!/bin/sh
+# NTP whenever a connection comes up (the RTC can't be set); not on the USB link
+[ "$2" = up ] && [ "$1" != usb0 ] && (/usr/sbin/glassine-clock sync &)
+exit 0

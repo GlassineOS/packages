@@ -1,0 +1,10 @@
+# The desktop session on the Onyx Boox Note Air (device-onyx-noteair).
+# The boot splash goes first: it uses the panel before the session's daemon.
+rc_after="glassine-splash"
+
+# The saved power mode (glassine-ddr): the session's cgroup exists from here on,
+# and its CPU floor and the touch controller's timeout are set at every start.
+start_post() {
+	/usr/sbin/glassine-ddr >/dev/null 2>&1
+	return 0
+}

@@ -1,0 +1,21 @@
+#!/bin/sh
+# glassine-clock: system time on a device whose RTC Linux can only read (the
+# Qualcomm PMIC RTC belongs to the secure world and counts from 1970). As on
+# Android, system time = RTC + a stored offset.
+#   glassine-clock save   store system time - RTC time (the service at shutdown)
+#   glassine-clock sync   NTP once, then save (NetworkManager on a new connection;
+#                         skipped while /etc/glassine/ntp-off exists)
+F=${GLASSINE_CLOCK_OFFSET:-/var/lib/glassine/clock-offset}
+RTC=${GLASSINE_CLOCK_RTC:-/sys/class/rtc/rtc0/since_epoch}
+case "${1:-}" in
+	sync)
+		[ -e /etc/glassine/ntp-off ] && exit 0
+		busybox ntpd -n -q -p pool.ntp.org >/dev/null 2>&1 || exit 1
+		mkdir -p /var/lib/glassine && touch /var/lib/glassine/ntp-synced   # its mtime: "last synced"
+		;;
+	save) ;;
+	*) echo "usage: $0 save|sync" >&2; exit 2 ;;
+esac
+[ -r "$RTC" ] || { echo "glassine-clock: no RTC at $RTC" >&2; exit 1; }
+mkdir -p "${F%/*}"
+echo $(( $(date +%s) - $(cat "$RTC") )) > "$F.tmp" && mv "$F.tmp" "$F"

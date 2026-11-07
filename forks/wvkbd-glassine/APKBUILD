@@ -1,12 +1,12 @@
 # Maintainer: Moritz Meißelbach <moritz@glassine.org>
-# wvkbd-glassine from GlassineOS/wvkbd (branch glassine/0.16): wvkbd with themable keys
-# (outline, gap, pressed label, no press popup) and a German QWERTZ layer. Installs only
+# wvkbd-glassine from GlassineOS/wvkbd (tag 0.21-glassine2, branch glassine/0.21): wvkbd
+# 0.21 with themable keys (key outline, gap) and a German QWERTZ layer. Installs only
 # /usr/bin/wvkbd-glassine, the keyboard the GlassineOS shell starts, so Alpine's wvkbd
 # stays installable beside it.
 pkgname=wvkbd-glassine
-pkgver=0.16_git20261105
-# GlassineOS/wvkbd glassine/0.16
-_commit=c0ab1f86e54769fbea20692e46463426f5464f6b
+# the tag 0.21-glassine2 (ADR 0005: <upstream>-glassine<N>); apk spells the N as _p<N>
+pkgver=0.21_p2
+_tag=0.21-glassine2
 pkgrel=0
 pkgdesc="On-screen keyboard for wlroots (GlassineOS: themable keys, German layer)"
 url="https://github.com/GlassineOS/wvkbd"
@@ -14,8 +14,8 @@ arch="all"
 license="GPL-3.0-only"
 makedepends="cairo-dev libxkbcommon-dev pango-dev wayland-dev"
 options="!check" # no tests
-source="wvkbd-$_commit.tar.gz::https://github.com/GlassineOS/wvkbd/archive/$_commit.tar.gz"
-builddir="$srcdir/wvkbd-$_commit"
+source="wvkbd-$_tag.tar.gz::https://github.com/GlassineOS/wvkbd/archive/refs/tags/$_tag.tar.gz"
+builddir="$srcdir/wvkbd-$_tag"
 
 build() {
 	make wvkbd-mobintl
@@ -26,5 +26,5 @@ package() {
 }
 
 sha512sums="
-678dafa854b57bd71556666c215fec82b3df6e5233e760c733390fba763077f45913f9546468aa9c9d3c682b49d0bafc1b00843452d940ad5bce8d9977529549  wvkbd-c0ab1f86e54769fbea20692e46463426f5464f6b.tar.gz
+63855fa08d43229c1069608a42572e2a18293c309df0c794c1b29cbeb8b4eef0b308687615226de58b2169942910aa60f55571191f702cb49a49140c30aa5e2a  wvkbd-0.21-glassine2.tar.gz
 "

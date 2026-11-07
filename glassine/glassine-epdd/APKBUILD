@@ -5,9 +5,9 @@
 # /etc/glassine/epd.conf, which the device package provides, with the waveform path in
 # it. No waveform is in any package: the device's own is read at run time.
 pkgname=glassine-epdd
-pkgver=0_git20261106
+pkgver=0_git20261107
 # GlassineOS/epd main
-_commit=7754231d80e560cf334deb083c2a50cd33993976
+_commit=03d8cc72fc39367df49b2203e0d0e6eac925bd15
 pkgrel=0
 pkgdesc="GlassineOS e-ink panel daemon (recovery, static) and boot splash"
 url="https://github.com/GlassineOS/epd"
@@ -50,5 +50,5 @@ desktop() {
 }
 
 sha512sums="
-305291fc444ad776eb95e3a872fabf734788e3b8e523bd779849ccd1255573740d17e549d2703a7a348d02106311e1cc8393ddbdfd0db8d8e2a629deabb572a5  epd-7754231d80e560cf334deb083c2a50cd33993976.tar.gz
+182a57db033716a078a0caf79ad0af7c6f79a245a84b4b6012eab6b5b3f49ab6ce680175a8ea86c3043a31b5296cd9a5d686b49985b55d0bdd3e51ddac8bb9c5  epd-03d8cc72fc39367df49b2203e0d0e6eac925bd15.tar.gz
 "

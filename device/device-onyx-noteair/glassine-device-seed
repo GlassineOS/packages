@@ -81,27 +81,39 @@ check_file() {
 	esac
 }
 
+# the file system type of DEV, from blkid's default output (DEV: ... TYPE="ext4"
+# ...). Busybox blkid ignores -o and -s, so they aren't used; the space before
+# TYPE= keeps SEC_TYPE= and PTTYPE= (util-linux) out.
+fs_type() {
+	blkid "$1" 2>/dev/null | sed -n 's/.*[[:space:]]TYPE="\([^"]*\)".*/\1/p' | head -n1
+}
+
 # read_source PART:/PATH OUT: copy one file from a source, read-only
 read_source() {
 	local part=${1%%:*} path=${1#*:} dev t m rc=1
+	if [ -n "$FAKE" ]; then dev=$FAKE/src/$part
+	else dev=$(part_dev "$part") || { say "no partition $part"; return 1; }
+	fi
+	t=$(fs_type "$dev")
+	case $t in
+	ext2|ext3|ext4|vfat|btrfs) ;;
+	*) say "$part: file system '${t:-unknown}' not read"; return 1 ;;
+	esac
 	if [ -n "$FAKE" ]; then
-		cp "$FAKE/src/$part$path" "$2" 2>/dev/null
+		cp "$dev$path" "$2" 2>/dev/null
 		return
 	fi
-	dev=$(part_dev "$part") || { say "no partition $part"; return 1; }
-	t=$(blkid -o value -s TYPE "$dev" 2>/dev/null)
 	case $t in
-	ext2|ext3|ext4)
+	ext*)
 		debugfs -R "dump -p $path $2" "$dev" >/dev/null 2>&1
 		[ -s "$2" ] ;;
-	vfat|btrfs)
+	*)
 		m=$RUN/device-src; mkdir -p "$m"
 		if [ "$t" = btrfs ]; then mount -t btrfs -o ro,rescue=nologreplay "$dev" "$m"
 		else mount -t vfat -o ro "$dev" "$m"; fi || return 1
 		cp "$m$path" "$2" 2>/dev/null && rc=0
 		umount "$m"
 		return $rc ;;
-	*) say "$part: file system '${t:-unknown}' not read"; return 1 ;;
 	esac
 }
 

@@ -82,7 +82,10 @@ check() {
 # journal, a bad waveform, the health check
 _check_seed() {
 	local d="$1" f=$1/fake rc h
-	rm -rf "$d"; mkdir -p "$f/src/system_a/waveform" "$d/run"
+	rm -rf "$d"; mkdir -p "$f/src/system_a/waveform" "$d/run" "$d/bin"
+	# blkid: the line in SRC.blkid, as busybox prints it (it ignores -o and -s)
+	printf '#!/bin/sh\ncat "$1.blkid" 2>/dev/null\n' > "$d/bin/blkid"; chmod +x "$d/bin/blkid"
+	echo "$f/src/system_a: UUID=\"a46c\" TYPE=\"ext4\"" > "$f/src/system_a.blkid"
 	# a waveform with a correct header: the file's length at offset 4
 	_wbf() {
 		local n=$1
@@ -91,7 +94,7 @@ _check_seed() {
 	}
 	_wbf 4096 "$f/src/system_a/waveform/eink_waveform.wbf"
 	printf 'DEVICE_PART=vendor_b\nwaveform.wbf system_a:/waveform/eink_waveform.wbf wbf # the panel\n' > "$d/conf"
-	seed() { GLASSINE_SEED_CONF="$d/conf" GLASSINE_SEED_RUN="$d/run" GLASSINE_SEED_FAKE="$f" \
+	seed() { PATH="$d/bin:$PATH" GLASSINE_SEED_CONF="$d/conf" GLASSINE_SEED_RUN="$d/run" GLASSINE_SEED_FAKE="$f" \
 		sh "$srcdir/glassine-device-seed" "$@" 2>>"$d/log"; }
 	S=$f/part/glassine
 
@@ -144,6 +147,17 @@ _check_seed() {
 	rc=0; seed || rc=$?
 	[ $rc = 1 ] && [ ! -e "$S/waveform.wbf" ] || { echo "seed: a bad waveform was copied (rc $rc)"; return 1; }
 
+	# the source's file system from util-linux's blkid (SEC_TYPE, PTTYPE): read;
+	# one the seed doesn't read: nothing copied
+	_wbf 4096 "$f/src/system_a/waveform/eink_waveform.wbf"
+	echo '/dev/sda5: LABEL="system" SEC_TYPE="ext2" TYPE="ext3" PARTLABEL="system_a" PTTYPE="dos"' > "$f/src/system_a.blkid"
+	rm -rf "$f/part" "$d/run/device"
+	seed || { echo "seed: util-linux blkid output not read"; cat "$d/log"; return 1; }
+	echo '/dev/sda5: UUID="a46c" TYPE="squashfs"' > "$f/src/system_a.blkid"
+	rm -rf "$f/part" "$d/run/device"; rc=0; seed || rc=$?
+	[ $rc = 1 ] && [ ! -e "$S/waveform.wbf" ] && grep -q "file system 'squashfs' not read" "$d/log" \
+		|| { echo "seed: an unknown file system was read (rc $rc)"; return 1; }
+
 	# the health check against a seed path
 	h="$srcdir/waveform.health"
 	_wbf 4096 "$d/w.wbf"
@@ -181,7 +195,7 @@ bfb3dad2f51753062df3f0ff7814d271d8edca6a00276c7625f48e54e65d980eaabdcbf62c17f448
 25a60f5ab6c9a5592d33a107fc2a33c8eefc8601e9aa22ca965801cf1ec6db3e6152472591e8dd36460edec119466908c717c8195ecb34c44188f8ef69bca859  glassine-clock.initd
 35fabd4c4f1f6d5bd28fd1a0b0502e8dc969502ecddfdbd792338ed812ef867f5b893ab7c3bc5d3d63bbffcc0d1b570f8f2b19ff3c9142fe12e2f244b649ab34  glassine-clock.nm-dispatcher
 5946fc2ce4e8311e5be331a9c9bd305942340436bb4c7864e101365f633342f0b56c7a26a0e6453cfeff46dfb3a0c99db0a0f6c40f541e1562a1ed44338ce3d5  glassine-ddr
-309d24d9e5e3472a53d0d65be460d8e9403345d4c7ddd8010dbc68ea8475a070b22111fad08adf2c7c44dbff5c9a0fccc9e1d594847da4f75aa1f3d2a1ec283d  glassine-device-seed
+d74effce950ca1becda0098839e162559eb5d8aeaa6c6653a26de4ad1c6c4b300a719e5bc3f49d0b7311a76791d4196f9f195029a2e4f700ca15ebdc3c0c1c5a  glassine-device-seed
 554a68313a19d93e40a81c82aedcca1249cfbb54ddb299c2833f3a9d07c5aa2a2a3f0776627283d51cb93c7310fc1fb87bc60a728b976603e0476c0bcdc827c6  glassine-device-seed.initd
 1f3f012fcfebda0093884eb3e7e6ecef835268f3b5a7646bf4690aa8970cefd4b7641fa64d36e86664ec31c098823acd22ed3ae6a453c0dce4ca0f08a66395af  glassine-session.confd
 5fa5ae86cbb297ce05fb06b34048d2c86796cc312a314eba1e24558b7d8f5ef0e7c119a29379e58b6d87cb8797776d58d75828d9d2dd163acb55857f7dbf5fb9  glassine-splash.initd

@@ -1,0 +1,54 @@
+# Maintainer: Moritz Meißelbach <moritz@glassine.org>
+# The look of the GlassineOS desktop, from GlassineOS/ui: the three voices (White,
+# Editorial, Stationery) as data and the drawing built on them. libglassine-ui is the
+# C library for native programs (the shell, Home); py3-glassine-ui is the same for
+# the GTK/cairo programs (Settings, the first-run setup).
+pkgname=glassine-ui
+pkgver=1.0.0_git20261107
+# GlassineOS/ui main
+_commit=b172188c9e27314fb481d93e863ec4ffe86cb0c5
+pkgrel=0
+pkgdesc="GlassineOS desktop look: the voices and the drawing built on them"
+url="https://github.com/GlassineOS/ui"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	cairo-dev
+	glib-dev
+	librsvg-dev
+	pango-dev
+	python3
+	"
+# the tests draw a sample sheet with both forms and compare them
+checkdepends="
+	adwaita-icon-theme
+	font-dejavu
+	gtk+3.0
+	py3-cairo
+	py3-gobject3
+	"
+subpackages="$pkgname-dev py3-$pkgname:py3:noarch"
+source="ui-$_commit.tar.gz::https://github.com/GlassineOS/ui/archive/$_commit.tar.gz"
+builddir="$srcdir/ui-$_commit"
+
+build() {
+	make PREFIX=/usr
+}
+
+check() {
+	make PREFIX=/usr check
+}
+
+package() {
+	make DESTDIR="$pkgdir" PREFIX=/usr install
+}
+
+py3() {
+	pkgdesc="GlassineOS desktop look for Python/cairo programs (glassine_ui)"
+	depends="gtk+3.0 pango py3-cairo py3-gobject3 python3"
+	amove usr/lib/python3*
+}
+
+sha512sums="
+f5d08658b2cc83a876669d4a214688d4985873cd750f2cbe126e932b289491457ad0f32db1b7b7ee52cfa226b678094a20d721f772c0381312d0100a865dd157  ui-b172188c9e27314fb481d93e863ec4ffe86cb0c5.tar.gz
+"

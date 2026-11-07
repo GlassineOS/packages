@@ -1,0 +1,37 @@
+# Maintainer: Moritz Meißelbach <moritz@glassine.org>
+# glassine-slot from GlassineOS/boot: the bootloader's A/B slot state in the GPT
+# attributes of boot_a/boot_b (Qualcomm's scheme), read from the live table. On a
+# dual-boot device the slots are two systems; glassine-deploy-accept marks the booted
+# slot successful after a healthy boot (SLOT_TOOL in deploy.conf). Commands and exit
+# codes: boot's docs/boot.md, "Slots".
+pkgname=glassine-slot
+pkgver=0.1.0
+# GlassineOS/boot main
+_commit=4efb1290740fa9b7fbc30c4f264317c866dbb281
+pkgrel=0
+pkgdesc="GlassineOS A/B boot slot tool (GPT slot attributes)"
+url="https://github.com/GlassineOS/boot"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="linux-headers"
+# boot's own test: a GPT disk image, sgdisk as the independent writer and checker (python3 edits tables)
+checkdepends="python3 sgdisk"
+source="boot-$_commit.tar.gz::https://github.com/GlassineOS/boot/archive/$_commit.tar.gz"
+builddir="$srcdir/boot-$_commit"
+
+build() {
+	make CFLAGS="$CFLAGS -Wall" glassine-slot
+}
+
+check() {
+	# test/slot/inner.sh as in boot's CI, with its container paths moved here
+	sed -e "s|/p/|$builddir/|g" -e "s|^W=/w;|W=$srcdir/w;|" test/slot/inner.sh > "$srcdir"/slot-test.sh
+	sh "$srcdir"/slot-test.sh
+}
+
+package() {
+	install -Dm755 glassine-slot "$pkgdir"/usr/sbin/glassine-slot
+}
+sha512sums="
+753faf34010fee0c2d27a3fca181cee10b03f291b2adfa0e6830391a1529c9f45ff6282cf8a5ac591de00befc6b73fb0a2c3c3938e989e622cbc9513ed1b04bf  boot-4efb1290740fa9b7fbc30c4f264317c866dbb281.tar.gz
+"

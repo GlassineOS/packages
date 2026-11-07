@@ -6,7 +6,7 @@
 # sysinit.
 pkgname=device-onyx-noteair
 pkgver=2
-pkgrel=0
+pkgrel=1
 builddir="$srcdir"
 pkgdesc="Onyx Boox Note Air: clock, power modes, e-ink splash, panel adapter, device seed, boot tuning"
 url="https://github.com/GlassineOS/packages"
@@ -95,7 +95,7 @@ _check_seed() {
 	_wbf 4096 "$f/src/system_a/waveform/eink_waveform.wbf"
 	printf 'DEVICE_PART=vendor_b\nwaveform.wbf system_a:/waveform/eink_waveform.wbf wbf # the panel\n' > "$d/conf"
 	seed() { PATH="$d/bin:$PATH" GLASSINE_SEED_CONF="$d/conf" GLASSINE_SEED_RUN="$d/run" GLASSINE_SEED_FAKE="$f" \
-		sh "$srcdir/glassine-device-seed" "$@" 2>>"$d/log"; }
+		GLASSINE_SEED_REQUEST="$d/request" sh "$srcdir/glassine-device-seed" "$@" 2>>"$d/log"; }
 	S=$f/part/glassine
 
 	seed || { echo "seed: first seed failed"; cat "$d/log"; return 1; }
@@ -125,14 +125,29 @@ _check_seed() {
 
 	# refresh: read again; a source that can't be read keeps the seed's copy
 	_wbf 8192 "$f/src/system_a/waveform/eink_waveform.wbf"
-	seed refresh || { echo "seed: refresh failed"; return 1; }
+	seed refresh --now || { echo "seed: refresh failed"; return 1; }
 	[ "$(wc -c < "$S/waveform.wbf")" = 8192 ] || { echo "seed: refresh did not copy"; return 1; }
 	[ "$(wc -l < "$S/manifest")" = 2 ] || { echo "seed: refresh's manifest"; cat -A "$S/manifest"; return 1; }
 	mv "$f/src/system_a" "$f/src/gone"
-	rc=0; seed refresh || rc=$?
+	rc=0; seed refresh --now || rc=$?
 	mv "$f/src/gone" "$f/src/system_a"
 	[ $rc = 1 ] && [ "$(wc -c < "$S/waveform.wbf")" = 8192 ] && [ -f "$d/run/device/waveform.wbf" ] \
 		|| { echo "seed: refresh without a source lost the copy (rc $rc)"; return 1; }
+
+	# refresh without --now: only the request; the next start refreshes even
+	# though the seed is bound, and clears it; an unreadable source keeps it
+	_wbf 6144 "$f/src/system_a/waveform/eink_waveform.wbf"
+	seed refresh >/dev/null || { echo "seed: refresh request failed"; return 1; }
+	[ -e "$d/request" ] && [ "$(wc -c < "$S/waveform.wbf")" = 8192 ] || { echo "seed: refresh request changed the seed now"; return 1; }
+	mv "$f/src/system_a" "$f/src/gone"
+	rc=0; seed || rc=$?
+	mv "$f/src/gone" "$f/src/system_a"
+	[ $rc = 1 ] && [ -e "$d/request" ] && [ -f "$d/run/device/waveform.wbf" ] || { echo "seed: a request with no source was dropped (rc $rc)"; return 1; }
+	seed || { echo "seed: the requested refresh failed"; return 1; }
+	[ ! -e "$d/request" ] && [ "$(wc -c < "$d/run/device/waveform.wbf")" = 6144 ] || { echo "seed: the request was not done at start"; return 1; }
+	_wbf 8192 "$f/src/system_a/waveform/eink_waveform.wbf"; seed refresh --now || { echo "seed: back to 8192"; return 1; }
+	rc=0; seed refresh --later 2>/dev/null || rc=$?
+	[ $rc = 2 ] || { echo "seed: an unknown option is accepted"; return 1; }
 
 	# a write that fails (cp stops after 100 bytes of the temp file): no temp
 	# file left, the old copy verified and bound
@@ -141,7 +156,7 @@ _check_seed() {
 			"$(command -v cp)" > "$d/bin/cp"; chmod +x "$d/bin/cp"
 	}
 	_cpfail; _wbf 4096 "$f/src/system_a/waveform/eink_waveform.wbf"
-	rc=0; seed refresh || rc=$?
+	rc=0; seed refresh --now || rc=$?
 	rm "$d/bin/cp"
 	[ $rc = 1 ] && grep -q "writing the seed failed" "$d/log" || { echo "seed: a failed write is not a failure (rc $rc)"; return 1; }
 	ls -a "$S" | grep -q '\.new' && { echo "seed: a failed write left its temp file"; ls -a "$S"; return 1; }
@@ -159,7 +174,7 @@ _check_seed() {
 
 	# the read-write mount is refused: the seed is mounted read-only again and bound
 	: > "$f/rw_fails"
-	rc=0; seed refresh || rc=$?
+	rc=0; seed refresh --now || rc=$?
 	rm "$f/rw_fails"
 	[ $rc = 1 ] && grep -q "cannot mount vendor_b read-write" "$d/log" && [ "$(wc -c < "$d/run/device/waveform.wbf")" = 8192 ] \
 		&& seed status >/dev/null || { echo "seed: not bound again after a refused read-write mount (rc $rc)"; return 1; }
@@ -227,7 +242,7 @@ bfb3dad2f51753062df3f0ff7814d271d8edca6a00276c7625f48e54e65d980eaabdcbf62c17f448
 25a60f5ab6c9a5592d33a107fc2a33c8eefc8601e9aa22ca965801cf1ec6db3e6152472591e8dd36460edec119466908c717c8195ecb34c44188f8ef69bca859  glassine-clock.initd
 35fabd4c4f1f6d5bd28fd1a0b0502e8dc969502ecddfdbd792338ed812ef867f5b893ab7c3bc5d3d63bbffcc0d1b570f8f2b19ff3c9142fe12e2f244b649ab34  glassine-clock.nm-dispatcher
 5946fc2ce4e8311e5be331a9c9bd305942340436bb4c7864e101365f633342f0b56c7a26a0e6453cfeff46dfb3a0c99db0a0f6c40f541e1562a1ed44338ce3d5  glassine-ddr
-6926b97b9e55ded69701dcab828937f3b38ad07fd6f3599fcddd5b4379af2f9a90f09c99f484c65cd75062ab6938a566154af4357799951d03cf114b18834c4a  glassine-device-seed
+4e5f5bdef8181315085536420f22232cb296ed7583ba872999e3ee8d96a7a4ee4730f5bdfd9a9f86122d2b857ba8455b62842d0e925454dea40a6acc9cbd4226  glassine-device-seed
 554a68313a19d93e40a81c82aedcca1249cfbb54ddb299c2833f3a9d07c5aa2a2a3f0776627283d51cb93c7310fc1fb87bc60a728b976603e0476c0bcdc827c6  glassine-device-seed.initd
 1f3f012fcfebda0093884eb3e7e6ecef835268f3b5a7646bf4690aa8970cefd4b7641fa64d36e86664ec31c098823acd22ed3ae6a453c0dce4ca0f08a66395af  glassine-session.confd
 5fa5ae86cbb297ce05fb06b34048d2c86796cc312a314eba1e24558b7d8f5ef0e7c119a29379e58b6d87cb8797776d58d75828d9d2dd163acb55857f7dbf5fb9  glassine-splash.initd

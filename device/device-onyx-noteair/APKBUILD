@@ -2,19 +2,25 @@
 # The Onyx Boox Note Air's system services and scripts. Its configuration files
 # (sysctl, sound routing) are in the device stage of GlassineOS/images, except the
 # panel adapter (/etc/glassine/epd.conf), the device seed's list and Android's slot
-# (/etc/glassine/slots.conf, for the power menu), which go with the tools that read them. The images device stage adds glassine-device-seed to
-# sysinit.
+# (/etc/glassine/slots.conf, for the power menu), which go with the tools that read them.
+# onyx-noteair-bringup brings up the modem, ADSP, WiFi, Bluetooth and the sound card
+# (with its modprobe.d file and the speaker and microphone routing). The images
+# device stage adds glassine-device-seed to sysinit.
 pkgname=device-onyx-noteair
-pkgver=2
-pkgrel=2
+pkgver=3
+pkgrel=0
 builddir="$srcdir"
-pkgdesc="Onyx Boox Note Air: clock, power modes, e-ink splash, panel adapter, device seed, Android slot, boot tuning"
+pkgdesc="Onyx Boox Note Air: system services, device seed, modem, radios and sound"
 url="https://github.com/GlassineOS/packages"
 arch="noarch"
 license="GPL-2.0-or-later"
 # e2fsprogs-extra (it needs e2fsprogs): dumpe2fs and debugfs (the seed reads ext4 without mounting)
 # glassine-slot: the power menu's "Android" switches to the slot slots.conf names
-depends="busybox e2fsprogs e2fsprogs-extra glassine-epdd glassine-slot"
+# onyx-noteair-bringup: qrtr (qrtr-lookup, to look at the modem's services), rmtfs and
+# tqftpserv (the modem's file systems and file server), qrtr-diag-sink (without it the
+# WLAN firmware takes the modem down), alsa-utils (amixer: the sound routing)
+depends="busybox e2fsprogs e2fsprogs-extra glassine-epdd glassine-slot
+	alsa-utils qrtr qrtr-diag-sink rmtfs tqftpserv"
 source="device-seed.conf
 	epd.conf
 	glassine-clock
@@ -25,6 +31,9 @@ source="device-seed.conf
 	glassine-device-seed.initd
 	glassine-session.confd
 	glassine-splash.initd
+	onyx-noteair-bringup
+	onyx-noteair-bringup.initd
+	onyx-noteair-bringup.modprobe
 	onyx-noteair-tune.initd
 	slots.conf
 	waveform.health
@@ -39,7 +48,8 @@ check() {
 	local f t rc
 	for f in glassine-clock glassine-clock.initd glassine-clock.nm-dispatcher glassine-ddr \
 		glassine-device-seed glassine-device-seed.initd glassine-session.confd \
-		glassine-splash.initd onyx-noteair-tune.initd waveform.health; do
+		glassine-splash.initd onyx-noteair-bringup onyx-noteair-bringup.initd \
+		onyx-noteair-tune.initd waveform.health; do
 		sh -n "$srcdir/$f" || return 1
 	done
 	t="$srcdir/t"; rm -rf "$t"; mkdir -p "$t/p" "$t/cg" "$t/pip"
@@ -76,7 +86,8 @@ check() {
 	[ $rc = 1 ] || { echo "ddr: no voter is not an error"; return 1; }
 	[ "$(cat "$t/cg/cpu.uclamp.min")" = 0 ] || { echo "ddr: no voter, no floor"; return 1; }
 
-	_check_seed "$t/seed"
+	_check_seed "$t/seed" || return 1
+	_check_bringup "$t/bringup"
 }
 
 # the device seed on plain directories (GLASSINE_SEED_FAKE): first seed, verify,
@@ -221,6 +232,185 @@ _check_seed() {
 	return 0
 }
 
+# onyx-noteair-bringup on a stand-in tree: fake remoteprocs, partitions, sound card
+# and session, and stand-ins on PATH for every command that touches the hardware or
+# a daemon (they log their calls to $B/calls). The sleep stand-in returns at once,
+# turns a remoteproc state "start" into "running" and moves the kernel log and the
+# uptime on to the next round's files (dmesg.N, uptime.N).
+_check_bringup() {
+	local B="$1" rc s P W bin="$1/bin"
+	_bt_tree() {
+		for f in "$B"/*.pid "$B"/run/*.pid; do
+			[ -s "$f" ] && kill "$(cat "$f")" 2>/dev/null || :
+		done
+		rm -rf "$B"; mkdir -p "$bin" "$B/dev" "$B/parts" "$B/run" "$B/proc/asound" "$B/sys/class/net" "$B/sys/class/bluetooth"
+		local r=$B/sys/class/remoteproc
+		mkdir -p "$r/remoteproc0/device" "$r/remoteproc1/device"
+		echo 4080000.remoteproc > "$r/remoteproc0/name"
+		echo 'of:NremoteprocT(null)Cqcom,sdm660-mss-pil' > "$r/remoteproc0/device/modalias"
+		echo offline > "$r/remoteproc0/state"
+		echo adsp > "$r/remoteproc1/name"
+		echo 'of:NremoteprocT(null)Cqcom,sdm660-adsp-pas' > "$r/remoteproc1/device/modalias"
+		echo offline > "$r/remoteproc1/state"
+		for p in modemst1 modemst2 fsc fsg; do head -c 4096 /dev/urandom > "$B/parts/$p"; done
+		(cd "$B/parts" && sha256sum modemst1 modemst2 fsc fsg) > "$B/parts.sha"
+		echo "100.00 50.00" > "$B/proc/uptime"; : > "$B/dmesg"; : > "$B/calls"; echo 0 > "$B/round"
+		cat > "$bin/modprobe" <<-'S'
+		#!/bin/sh
+		echo "modprobe $*" >> "$B/calls"
+		grep -qx "$1" "$B/fail_modules" 2>/dev/null && exit 1
+		case $1 in
+		rmtfs_mem) : > "$B/dev/qcom_rmtfs_mem1" ;;
+		ath10k_snoc) mkdir -p "$B/sys/class/net/wlan0" ;;
+		hci_uart) mkdir -p "$B/sys/class/bluetooth/hci0" ;;
+		snd-soc-sm8250) printf ' 0 [NoteAir        ]: sdm660 - Onyx Note Air\n                      Onyx Note Air\n' > "$B/proc/asound/cards" ;;
+		esac
+		exit 0
+		S
+		cat > "$bin/start-stop-daemon" <<-'S'
+		#!/bin/sh
+		act= pf= exe= args=
+		while [ $# -gt 0 ]; do
+			case $1 in
+			--start) act=start ;; --stop) act=stop ;;
+			--pidfile|--stdout|--stderr|--exec|--retry) [ $1 = --pidfile ] && pf=$2; [ $1 = --exec ] && exe=$2; shift ;;
+			--) shift; args="$*"; break ;;
+			esac
+			shift
+		done
+		n=$(basename "$pf" .pid)
+		echo "ssd $act $n $exe $args" >> "$B/calls"
+		if [ $act = start ]; then
+			/bin/sleep 300 & echo $! > "$pf"
+			[ $n = rmtfs ] && echo running > "$B/sys/class/remoteproc/remoteproc0/state"
+		else
+			kill "$(cat "$pf")"
+		fi
+		exit 0
+		S
+		cat > "$bin/sleep" <<-'S'
+		#!/bin/sh
+		for s in "$B"/sys/class/remoteproc/*/state; do [ "$(cat "$s")" = start ] && echo running > "$s"; done
+		n=$(( $(cat "$B/round") + 1 )); echo $n > "$B/round"
+		[ -f "$B/dmesg.$n" ] && cp "$B/dmesg.$n" "$B/dmesg"
+		[ -f "$B/uptime.$n" ] && cp "$B/uptime.$n" "$B/proc/uptime"
+		exit 0
+		S
+		printf '#!/bin/sh\necho "amixer $*" >> "$B/calls"\n[ ! -e "$B/amixer_fails" ]\n' > "$bin/amixer"
+		printf '#!/bin/sh\necho "rmmod $*" >> "$B/calls"\n' > "$bin/rmmod"
+		printf '#!/bin/sh\ncat "$B/dmesg"\n' > "$bin/dmesg"
+		printf '#!/bin/sh\n[ -s "$B/wp.pid" ] && cat "$B/wp.pid"\n' > "$bin/pgrep"
+		printf '#!/bin/sh\nwhile [ $# -gt 0 ] && [ "$1" != -c ]; do shift; done\nexec sh -c "$2"\n' > "$bin/su"
+		printf '#!/bin/sh\necho "wpctl $* $XDG_RUNTIME_DIR" >> "$B/calls"\n[ -e "$B/wp_has_alsa" ] && echo " 45. Onyx Note Air [alsa]"\nexit 0\n' > "$bin/wpctl"
+		printf '#!/bin/sh\necho "setsid $* FOO=$FOO" >> "$B/calls"\n' > "$bin/setsid"
+		chmod +x "$bin"/*
+	}
+	# a session WirePlumber: a real process, its environment in the fake /proc
+	_bt_wp() {
+		/bin/sleep 300 & W=$!; echo $W > "$B/wp.pid"
+		mkdir -p "$B/proc/$W"; printf 'XDG_RUNTIME_DIR=/run/user/1000\0FOO=bar\0' > "$B/proc/$W/environ"
+	}
+	bu() {
+		B="$B" PATH="$bin:$PATH" GLASSINE_BRINGUP_SYS="$B/sys" GLASSINE_BRINGUP_DEV="$B/dev" \
+			GLASSINE_BRINGUP_PROC="$B/proc" GLASSINE_BRINGUP_RUN="$B/run" GLASSINE_BRINGUP_PARTS="$B/parts" \
+			sh "$srcdir/onyx-noteair-bringup" "$@" >> "$B/log" 2>&1
+	}
+	# line number of the first call matching a pattern (0: none)
+	at() { grep -n -m1 -- "$1" "$B/calls" | cut -d: -f1 | grep . || echo 0; }
+	export B
+
+	# all steps, in order
+	_bt_tree; _bt_wp; : > "$B/wp_has_alsa"
+	bu up || { echo "bringup: up failed"; cat "$B/log"; return 1; }
+	s="$(at 'ssd start qrtr-diag-sink') $(at 'ssd start tqftpserv') $(at 'ssd start rmtfs') $(at 'modprobe qcom_q6v5_pas') $(at 'modprobe ath10k_snoc') $(at 'modprobe hci_uart') $(at 'amixer')"
+	echo "$s" | awk '{ for (i = 1; i <= NF; i++) if ($i == 0 || (i > 1 && $i <= $(i - 1))) exit 1 }' \
+		|| { echo "bringup: steps out of order ($s)"; cat "$B/calls"; return 1; }
+	[ "$(at 'modprobe rmtfs_mem')" -lt "$(at 'ssd start rmtfs')" ] || { echo "bringup: rmtfs before its memory"; return 1; }
+	grep -q "^ssd start rmtfs /usr/bin/rmtfs -r -s -o $B/run/efs\$" "$B/calls" \
+		|| { echo "bringup: rmtfs not read-only on the copies"; grep rmtfs "$B/calls"; return 1; }
+	for s in modemst1:modem_fs1 modemst2:modem_fs2 fsc:modem_fsc fsg:modem_fsg; do
+		cmp -s "$B/parts/${s%%:*}" "$B/run/efs/${s#*:}" || { echo "bringup: copy of ${s%%:*} differs"; return 1; }
+	done
+	(cd "$B/parts" && sha256sum -c -s "$B/parts.sha") || { echo "bringup: a partition changed"; return 1; }
+	[ "$(cat "$B/sys/class/remoteproc/remoteproc1/state")" = running ] || { echo "bringup: the ADSP not started"; return 1; }
+	[ "$(grep -c '^amixer -q -c 0 cset' "$B/calls")" = 6 ] || { echo "bringup: speaker and microphone not routed on card 0"; return 1; }
+	grep -q "^wpctl status /run/user/1000" "$B/calls" && grep -q "WirePlumber has the sound card" "$B/log" \
+		&& ! grep -q '^setsid' "$B/calls" && kill -0 "$W" || { echo "bringup: WirePlumber with the card restarted"; return 1; }
+	grep -q "up: done$" "$B/log" || { echo "bringup: no done line"; return 1; }
+	# up again: the copies and the running daemons are kept, WiFi is loaded again
+	cp "$B/parts/fsg" "$B/fsg.orig"; head -c 4096 /dev/urandom > "$B/parts/fsg"; : > "$B/calls"
+	bu up || { echo "bringup: up again failed"; cat "$B/log"; return 1; }
+	cmp -s "$B/fsg.orig" "$B/run/efs/modem_fsg" && ! grep -q '^ssd start' "$B/calls" && [ "$(at 'modprobe ath10k_snoc')" != 0 ] \
+		|| { echo "bringup: up again redid the copies or the daemons, or skipped WiFi"; cat "$B/calls"; return 1; }
+	bu status && grep -q "^rmtfs: running" "$B/log" && grep -q "^sound card: 0" "$B/log" || { echo "bringup: status"; return 1; }
+	# down: every daemon stopped, rmtfs first
+	: > "$B/calls"; bu down
+	[ "$(at 'ssd stop rmtfs')" = 1 ] && [ "$(grep -c '^ssd stop' "$B/calls")" = 3 ] && ! ls "$B"/run/*.pid >/dev/null 2>&1 \
+		|| { echo "bringup: down"; cat "$B/calls"; return 1; }
+
+	# a failed step is logged and the next ones still run
+	_bt_tree; echo ath10k_snoc > "$B/fail_modules"; : > "$B/log"
+	rc=0; bu up || rc=$?
+	[ $rc = 1 ] && grep -q "modprobe ath10k_snoc failed" "$B/log" && grep -q "up: done, failed: wifi$" "$B/log" \
+		&& [ "$(at 'modprobe hci_uart')" != 0 ] && [ "$(at amixer)" != 0 ] || { echo "bringup: a failed WiFi stopped the rest (rc $rc)"; cat "$B/log"; return 1; }
+	# no rmtfs memory: no daemon, the modem fails, the rest runs
+	_bt_tree; echo rmtfs_mem > "$B/fail_modules"; : > "$B/log"
+	rc=0; bu up || rc=$?
+	[ $rc = 1 ] && grep -q "failed: modem" "$B/log" && ! grep -q '^ssd start' "$B/calls" \
+		&& [ "$(at 'modprobe qcom_q6v5_pas')" != 0 ] && [ "$(at 'modprobe hci_uart')" != 0 ] && [ "$(at amixer)" != 0 ] \
+		|| { echo "bringup: no modem stopped the rest (rc $rc)"; cat "$B/log"; return 1; }
+	# a partition that can't be read: logged, no partial copy, the modem step fails
+	_bt_tree; rm "$B/parts/fsc"; : > "$B/log"
+	rc=0; bu up || rc=$?
+	[ $rc = 1 ] && grep -q "reading fsc failed" "$B/log" && [ ! -e "$B/run/efs/modem_fsc" ] && ! ls -a "$B/run/efs" | grep -q '\.new' \
+		|| { echo "bringup: an unreadable partition (rc $rc)"; cat "$B/log"; return 1; }
+	# a sound card that never appears: logged, nothing routed
+	_bt_tree; echo snd-soc-sm8250 > "$B/fail_modules"; : > "$B/log"
+	rc=0; bu up || rc=$?
+	[ $rc = 1 ] && grep -q "the sound card: not there after 60 s" "$B/log" && [ "$(at amixer)" = 0 ] \
+		|| { echo "bringup: no sound card (rc $rc)"; cat "$B/log"; return 1; }
+
+	# the workaround: WirePlumber lists no ALSA device -> started again with its environment
+	_bt_tree; _bt_wp; : > "$B/log"
+	bu up || { echo "bringup: up for the WirePlumber case"; cat "$B/log"; return 1; }
+	s=0; while ! grep -q '^setsid' "$B/calls" && [ $s -lt 50 ]; do /bin/sleep 0.1; s=$((s + 1)); done
+	grep -q "^setsid /usr/bin/wireplumber FOO=bar$" "$B/calls" && grep -q "WirePlumber missed the sound card" "$B/log" \
+		&& ! kill -0 "$W" 2>/dev/null || { echo "bringup: WirePlumber not restarted with its environment"; cat "$B/calls"; return 1; }
+
+	# the breaker: modem crashes at 100, 120, 140 s -> ath10k unloaded; the crash
+	# before the watch started doesn't count
+	_bt_tree; : > "$B/log"
+	m='remoteproc remoteproc0: handling crash #%s in 4080000.remoteproc'
+	printf "[ 50.0] $m\n" 1 > "$B/dmesg"
+	for s in 2:100 3:120 4:140; do
+		{ cat "$B/dmesg.$((${s%:*} - 2))" 2>/dev/null || cat "$B/dmesg"; printf "[ ${s#*:}.0] qcom-q6v5-mss 4080000.remoteproc: fatal error received: dog_hb.c: Task starvation: diag\n[ ${s#*:}.1] $m\n" ${s%:*}; } > "$B/dmesg.$((${s%:*} - 1))"
+		echo "${s#*:}.5 1.0" > "$B/uptime.$((${s%:*} - 1))"
+	done
+	GLASSINE_BRINGUP_WATCH_ROUNDS=5 bu watch
+	[ "$(grep -c '^rmmod ath10k_snoc ath10k_core$' "$B/calls")" = 1 ] && grep -q "crash loop (3 modem crashes within 60 s)" "$B/log" \
+		&& grep -q "modem crash #2: dog_hb.c: Task starvation: diag" "$B/log" || { echo "bringup: the breaker didn't trip"; cat "$B/log" "$B/calls"; return 1; }
+	# the same crashes 40 s apart: no unload
+	echo 0 > "$B/round"; : > "$B/calls"; printf "[ 50.0] $m\n" 1 > "$B/dmesg"
+	for s in 1:100 2:140 3:180; do echo "${s#*:}.5 1.0" > "$B/uptime.${s%:*}"; done
+	GLASSINE_BRINGUP_WATCH_ROUNDS=5 bu watch
+	! grep -q '^rmmod' "$B/calls" || { echo "bringup: the breaker tripped on crashes 40 s apart"; return 1; }
+	# three ADSP crashes within a minute: not the modem, no unload
+	echo 0 > "$B/round"; : > "$B/calls"; : > "$B/dmesg"
+	for s in 1 2 3; do sed "s/4080000\.remoteproc\$/adsp/" "$B/dmesg.$s" > "$B/dmesg.$s.x"; mv "$B/dmesg.$s.x" "$B/dmesg.$s"; echo "10$s.5 1.0" > "$B/uptime.$s"; done
+	GLASSINE_BRINGUP_WATCH_ROUNDS=5 bu watch
+	! grep -q '^rmmod' "$B/calls" || { echo "bringup: the breaker tripped on ADSP crashes"; return 1; }
+	# a daemon that died is started again
+	echo 0 > "$B/round"; : > "$B/calls"; echo 999999 > "$B/run/rmtfs.pid"
+	GLASSINE_BRINGUP_WATCH_ROUNDS=2 bu watch
+	grep -q "^ssd start rmtfs" "$B/calls" && grep -q "rmtfs is gone: starting it again" "$B/log" \
+		&& ! grep -q "^ssd start tqftpserv" "$B/calls" || { echo "bringup: a dead rmtfs not restarted"; cat "$B/calls"; return 1; }
+
+	rc=0; bu nonsense || rc=$?
+	[ $rc = 2 ] || { echo "bringup: an unknown command exits $rc"; return 1; }
+	_bt_tree
+	return 0
+}
+
 package() {
 	install -Dm755 "$srcdir"/glassine-clock "$pkgdir"/usr/sbin/glassine-clock
 	install -Dm755 "$srcdir"/glassine-ddr "$pkgdir"/usr/sbin/glassine-ddr
@@ -233,6 +423,9 @@ package() {
 	install -Dm755 "$srcdir"/glassine-clock.initd "$pkgdir"/etc/init.d/glassine-clock
 	install -Dm755 "$srcdir"/glassine-splash.initd "$pkgdir"/etc/init.d/glassine-splash
 	install -Dm755 "$srcdir"/onyx-noteair-tune.initd "$pkgdir"/etc/init.d/onyx-noteair-tune
+	install -Dm755 "$srcdir"/onyx-noteair-bringup "$pkgdir"/usr/sbin/onyx-noteair-bringup
+	install -Dm755 "$srcdir"/onyx-noteair-bringup.initd "$pkgdir"/etc/init.d/onyx-noteair-bringup
+	install -Dm644 "$srcdir"/onyx-noteair-bringup.modprobe "$pkgdir"/etc/modprobe.d/onyx-noteair-bringup.conf
 	install -Dm644 "$srcdir"/glassine-session.confd "$pkgdir"/etc/conf.d/glassine-session
 	install -Dm755 "$srcdir"/glassine-clock.nm-dispatcher \
 		"$pkgdir"/etc/NetworkManager/dispatcher.d/50-glassine-clock
@@ -249,6 +442,9 @@ bfb3dad2f51753062df3f0ff7814d271d8edca6a00276c7625f48e54e65d980eaabdcbf62c17f448
 554a68313a19d93e40a81c82aedcca1249cfbb54ddb299c2833f3a9d07c5aa2a2a3f0776627283d51cb93c7310fc1fb87bc60a728b976603e0476c0bcdc827c6  glassine-device-seed.initd
 1f3f012fcfebda0093884eb3e7e6ecef835268f3b5a7646bf4690aa8970cefd4b7641fa64d36e86664ec31c098823acd22ed3ae6a453c0dce4ca0f08a66395af  glassine-session.confd
 5fa5ae86cbb297ce05fb06b34048d2c86796cc312a314eba1e24558b7d8f5ef0e7c119a29379e58b6d87cb8797776d58d75828d9d2dd163acb55857f7dbf5fb9  glassine-splash.initd
+89f4ec9d0ad1c59eab2a51e548c96a9d0801b46c97aafc63cae88d4d85807caf7a79ce1b05dee64557a663ad11772bc807722a86e699e796ff4549e8e8b6b79c  onyx-noteair-bringup
+298b9bbb6b54616485c96151e6aac2615b91319f77378dec85231969c1335df02e017c04acb5e7d3b58e3e3d32065919017e623f3dd90f29e74b16668c85193b  onyx-noteair-bringup.initd
+03b41e8e1e1094c8e65fa797893ba840cd51e879833781e55cb405a2c7c90e7a97e74955ae547695e13a10ea03543abc222f0bac16e8025c8f9bac4287e96d9f  onyx-noteair-bringup.modprobe
 c82a04ed6cf8391dbbdd81c0fc5c1b3a3aec1cb87f68d4afbcf70c03f1098d29115273e3f2f409be0d3282fb6ddaeedc0918859e0fa1a20bce88e721af8daca2  onyx-noteair-tune.initd
 8f08c40570539754072a5b89e9c498a78f5b9307fda3a168cb0fa4961a7646946d3a066dbb163f6dc43f91e5d1a57f5e8a825218b5b0bb9bbbb8688cbfb6a2d7  slots.conf
 46dade4c54d7a4d91c26a658d0546a4a32583fa1e8cab12eab60b5bf6f710f6d6a2ef634c0b9dd95a087b1e86032bf7f4a56fcfd2a53a3f1759497ad63e6ba55  waveform.health

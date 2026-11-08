@@ -12,7 +12,7 @@
 pkgname=glassine-deploy
 pkgver=0.4.0
 # GlassineOS/boot main
-_commit=52eb3ab035cde12270dc7a3545823cd06def1dc0
+_commit=1ba4b071f603ad1f3173f15368065ae5d9381a04
 pkgrel=0
 pkgdesc="GlassineOS deployments: read-only bases, tried updates, reset, hibernation"
 url="https://github.com/GlassineOS/boot"
@@ -53,5 +53,5 @@ package() {
 	install -d "$pkgdir"/etc/glassine-bootimg/health.d "$pkgdir"/etc/glassine/hibernate.d
 }
 sha512sums="
-ab343464395a5723138a7a0a9cb1f04146227bb3e872a240bf0a5d44d77c13f41075c37699352918c955355491ce7c2abc944451d6c9f14968043daa0c76307f  boot-52eb3ab035cde12270dc7a3545823cd06def1dc0.tar.gz
+83347d4b259f9ee79012762a54b27b87dfa0d550f821605a5b118632f107da29b0b064ce445697176481c84e733d351f415568e5ed8cdce196f7c2585408281c  boot-1ba4b071f603ad1f3173f15368065ae5d9381a04.tar.gz
 "

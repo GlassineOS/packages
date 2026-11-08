@@ -1,34 +1,34 @@
 # Maintainer: Moritz Meißelbach <moritz@glassine.org>
 # The Onyx Boox Note Air's system services and scripts. Its configuration files
 # (sysctl, sound routing) are in the device stage of GlassineOS/images, except the
-# panel adapter (/etc/glassine/epd.conf), the device seed's list and Android's slot
-# (/etc/glassine/slots.conf, for the power menu), which go with the tools that read them.
+# panel adapter (/etc/glassine/epd.conf) and Android's slot (/etc/glassine/slots.conf,
+# for the power menu), which go with the tools that read them.
+# device-data.list names the device's own files (waveform, firmware) for the seed of
+# GlassineOS/boot (in glassine-deploy: the seed service and the initramfs read it).
 # onyx-noteair-bringup brings up the modem, ADSP, WiFi, Bluetooth and the sound card
-# (with its modprobe.d file and the speaker and microphone routing). The images
-# device stage adds glassine-device-seed to sysinit.
+# (with its modprobe.d file and the speaker and microphone routing).
 pkgname=device-onyx-noteair
-pkgver=3
+pkgver=4
 pkgrel=0
 builddir="$srcdir"
-pkgdesc="Onyx Boox Note Air: system services, device seed, modem, radios and sound"
+pkgdesc="Onyx Boox Note Air: system services, device data list, modem, radios and sound"
 url="https://github.com/GlassineOS/packages"
 arch="noarch"
 license="GPL-2.0-or-later"
-# e2fsprogs-extra (it needs e2fsprogs): dumpe2fs and debugfs (the seed reads ext4 without mounting)
+# glassine-deploy 0.4.0: the seed service that reads device-data.list (this package
+# shipped its own seed tool before)
 # glassine-slot: the power menu's "Android" switches to the slot slots.conf names
 # onyx-noteair-bringup: qrtr (qrtr-lookup, to look at the modem's services), rmtfs and
 # tqftpserv (the modem's file systems and file server), qrtr-diag-sink (without it the
 # WLAN firmware takes the modem down), alsa-utils (amixer: the sound routing)
-depends="busybox e2fsprogs e2fsprogs-extra glassine-epdd glassine-slot
+depends="busybox glassine-deploy>=0.4.0 glassine-epdd glassine-slot
 	alsa-utils qrtr qrtr-diag-sink rmtfs tqftpserv"
-source="device-seed.conf
+source="device-data.list
 	epd.conf
 	glassine-clock
 	glassine-clock.initd
 	glassine-clock.nm-dispatcher
 	glassine-ddr
-	glassine-device-seed
-	glassine-device-seed.initd
 	glassine-session.confd
 	glassine-splash.initd
 	onyx-noteair-bringup
@@ -47,7 +47,7 @@ build() {
 check() {
 	local f t rc
 	for f in glassine-clock glassine-clock.initd glassine-clock.nm-dispatcher glassine-ddr \
-		glassine-device-seed glassine-device-seed.initd glassine-session.confd \
+		glassine-session.confd \
 		glassine-splash.initd onyx-noteair-bringup onyx-noteair-bringup.initd \
 		onyx-noteair-tune.initd waveform.health; do
 		sh -n "$srcdir/$f" || return 1
@@ -86,138 +86,48 @@ check() {
 	[ $rc = 1 ] || { echo "ddr: no voter is not an error"; return 1; }
 	[ "$(cat "$t/cg/cpu.uclamp.min")" = 0 ] || { echo "ddr: no voter, no floor"; return 1; }
 
-	_check_seed "$t/seed" || return 1
+	_check_list "$srcdir/device-data.list" || return 1
+	_check_health "$t/health" || return 1
 	_check_bringup "$t/bringup"
 }
 
-# the device seed on plain directories (GLASSINE_SEED_FAKE): first seed, verify,
-# a damaged copy, a source that can't be read, a refresh, a cut-off write, the
-# journal, a bad waveform, the health check
-_check_seed() {
-	local d="$1" f=$1/fake rc h
-	rm -rf "$d"; mkdir -p "$f/src/system_a/waveform" "$d/run" "$d/bin"
-	# blkid: the line in SRC.blkid, as busybox prints it (it ignores -o and -s)
-	printf '#!/bin/sh\ncat "$1.blkid" 2>/dev/null\n' > "$d/bin/blkid"; chmod +x "$d/bin/blkid"
-	echo "$f/src/system_a: UUID=\"a46c\" TYPE=\"ext4\"" > "$f/src/system_a.blkid"
+# device-data.list in the format of GlassineOS/boot docs/kernel-artifacts.md: format=1
+# first, two or three fields, a name once, relative without dot parts, not manifest, a
+# PART:/PATH source not on the board's DEVICE_PART (vendor_b) and never one of the
+# modem's file systems, a pattern on both sides or neither, lower case on vfat sources
+_check_list() {
+	awk '
+	function bad(m) { print "device-data.list:" NR ": " m; err = 1 }
+	NR == 1 { if ($0 != "format=1") bad("not format=1"); next }
+	/^[ \t]*(#|$)/ { next }
+	{
+		if (NF < 2 || NF > 3) bad("two or three fields")
+		if (NF == 3 && $3 != "wbf" && $3 != "none") bad("unknown check " $3)
+		if ($1 in seen) bad("a name twice: " $1)
+		seen[$1] = 1
+		if ($1 ~ /^\// || ("/" $1) ~ /\/\./) bad("not relative, or a dot part: " $1)
+		if ($1 == "manifest") bad("the name manifest")
+		if ($2 !~ /^[a-z0-9_]+:\//) bad("source not PART:/PATH: " $2)
+		part = $2; sub(/:.*/, "", part)
+		if (part == "vendor_b") bad("a source on DEVICE_PART")
+		if (part ~ /^(modemst1|modemst2|fsc|fsg)$/) bad("a modem file system: " part)
+		if (($1 ~ /\.\*$/) != ($2 ~ /\.\*$/)) bad("a pattern on one side only")
+		if ((part == "modem" || part == "bluetooth") && $2 ~ /[A-Z]/) bad("upper case on a vfat source")
+		n++
+	}
+	END { if (!n) bad("no entries"); exit err }' "$1"
+}
+
+# the waveform health check (the panel adapter points it at the seed's copy)
+_check_health() {
+	local d="$1" h
+	rm -rf "$d"; mkdir -p "$d"
 	# a waveform with a correct header: the file's length at offset 4
 	_wbf() {
 		local n=$1
 		{ printf 'WBF\0'; printf "\\$(printf %o $((n & 255)))\\$(printf %o $((n >> 8 & 255)))\\$(printf %o $((n >> 16 & 255)))\\$(printf %o $((n >> 24 & 255)))"
 		  head -c $((n - 8)) /dev/urandom; } > "$2"
 	}
-	_wbf 4096 "$f/src/system_a/waveform/eink_waveform.wbf"
-	printf 'DEVICE_PART=vendor_b\nwaveform.wbf system_a:/waveform/eink_waveform.wbf wbf # the panel\n' > "$d/conf"
-	seed() { PATH="$d/bin:$PATH" GLASSINE_SEED_CONF="$d/conf" GLASSINE_SEED_RUN="$d/run" GLASSINE_SEED_FAKE="$f" \
-		GLASSINE_SEED_REQUEST="$d/request" sh "$srcdir/glassine-device-seed" "$@" 2>>"$d/log"; }
-	S=$f/part/glassine
-
-	seed || { echo "seed: first seed failed"; cat "$d/log"; return 1; }
-	cmp -s "$S/waveform.wbf" "$f/src/system_a/waveform/eink_waveform.wbf" || { echo "seed: copy differs"; return 1; }
-	[ "$(head -n1 "$S/manifest")" = format=1 ] && grep -q "^waveform.wbf system_a:/waveform/eink_waveform.wbf $(sha256sum "$S/waveform.wbf" | cut -d' ' -f1)\$" "$S/manifest" \
-		|| { echo "seed: manifest"; cat "$S/manifest"; return 1; }
-	[ "$(wc -l < "$S/manifest")" = 2 ] || { echo "seed: manifest is not format=1 and one line per file"; cat -A "$S/manifest"; return 1; }
-	[ -f "$d/run/device/waveform.wbf" ] || { echo "seed: not bound"; return 1; }
-	ls -a "$S" | grep -q '\.new' && { echo "seed: temp files left"; return 1; }
-
-	# bound: nothing to do, even with the source gone
-	mv "$f/src/system_a" "$f/src/gone"
-	seed || { echo "seed: a bound seed is redone"; return 1; }
-	seed status >/dev/null || { echo "seed: status of a complete seed"; return 1; }
-	# the boot again (nothing bound): verified, bound, the source not needed
-	rm "$d/run/device"; seed || { echo "seed: verify without the source"; return 1; }
-	[ -f "$d/run/device/waveform.wbf" ] || { echo "seed: verified seed not bound"; return 1; }
-
-	# a damaged copy and no source: incomplete, nothing bound
-	rm "$d/run/device"; echo x >> "$S/waveform.wbf"
-	rc=0; seed || rc=$?
-	[ $rc = 1 ] && [ ! -e "$d/run/device" ] || { echo "seed: a damaged copy is bound (rc $rc)"; return 1; }
-	# the source back: copied again
-	mv "$f/src/gone" "$f/src/system_a"
-	seed || { echo "seed: damaged copy not replaced"; return 1; }
-	cmp -s "$S/waveform.wbf" "$f/src/system_a/waveform/eink_waveform.wbf" || { echo "seed: replaced copy differs"; return 1; }
-
-	# refresh: read again; a source that can't be read keeps the seed's copy
-	_wbf 8192 "$f/src/system_a/waveform/eink_waveform.wbf"
-	seed refresh --now || { echo "seed: refresh failed"; return 1; }
-	[ "$(wc -c < "$S/waveform.wbf")" = 8192 ] || { echo "seed: refresh did not copy"; return 1; }
-	[ "$(wc -l < "$S/manifest")" = 2 ] || { echo "seed: refresh's manifest"; cat -A "$S/manifest"; return 1; }
-	mv "$f/src/system_a" "$f/src/gone"
-	rc=0; seed refresh --now || rc=$?
-	mv "$f/src/gone" "$f/src/system_a"
-	[ $rc = 1 ] && [ "$(wc -c < "$S/waveform.wbf")" = 8192 ] && [ -f "$d/run/device/waveform.wbf" ] \
-		|| { echo "seed: refresh without a source lost the copy (rc $rc)"; return 1; }
-
-	# refresh without --now: only the request; the next start refreshes even
-	# though the seed is bound, and clears it; an unreadable source keeps it
-	_wbf 6144 "$f/src/system_a/waveform/eink_waveform.wbf"
-	seed refresh >/dev/null || { echo "seed: refresh request failed"; return 1; }
-	[ -e "$d/request" ] && [ "$(wc -c < "$S/waveform.wbf")" = 8192 ] || { echo "seed: refresh request changed the seed now"; return 1; }
-	mv "$f/src/system_a" "$f/src/gone"
-	rc=0; seed || rc=$?
-	mv "$f/src/gone" "$f/src/system_a"
-	[ $rc = 1 ] && [ -e "$d/request" ] && [ -f "$d/run/device/waveform.wbf" ] || { echo "seed: a request with no source was dropped (rc $rc)"; return 1; }
-	seed || { echo "seed: the requested refresh failed"; return 1; }
-	[ ! -e "$d/request" ] && [ "$(wc -c < "$d/run/device/waveform.wbf")" = 6144 ] || { echo "seed: the request was not done at start"; return 1; }
-	_wbf 8192 "$f/src/system_a/waveform/eink_waveform.wbf"; seed refresh --now || { echo "seed: back to 8192"; return 1; }
-	rc=0; seed refresh --later 2>/dev/null || rc=$?
-	[ $rc = 2 ] || { echo "seed: an unknown option is accepted"; return 1; }
-
-	# a write that fails (cp stops after 100 bytes of the temp file): no temp
-	# file left, the old copy verified and bound
-	_cpfail() {
-		printf '#!/bin/sh\ncase $2 in */glassine/.*.new) head -c 100 "$1" > "$2"; exit 1 ;; esac\nexec %s "$@"\n' \
-			"$(command -v cp)" > "$d/bin/cp"; chmod +x "$d/bin/cp"
-	}
-	_cpfail; _wbf 4096 "$f/src/system_a/waveform/eink_waveform.wbf"
-	rc=0; seed refresh --now || rc=$?
-	rm "$d/bin/cp"
-	[ $rc = 1 ] && grep -q "writing the seed failed" "$d/log" || { echo "seed: a failed write is not a failure (rc $rc)"; return 1; }
-	ls -a "$S" | grep -q '\.new' && { echo "seed: a failed write left its temp file"; ls -a "$S"; return 1; }
-	[ "$(wc -c < "$d/run/device/waveform.wbf")" = 8192 ] && seed status >/dev/null \
-		|| { echo "seed: the old copy is not bound after a failed write"; return 1; }
-	# the list names another file and its write fails: the file the old manifest
-	# names is kept, and the old seed bound
-	mv "$d/conf" "$d/conf.orig"
-	printf 'DEVICE_PART=vendor_b\nother.wbf system_a:/waveform/eink_waveform.wbf wbf\n' > "$d/conf"
-	_cpfail; rm "$d/run/device"
-	rc=0; seed || rc=$?
-	rm "$d/bin/cp"; mv "$d/conf.orig" "$d/conf"
-	[ $rc = 1 ] && [ -f "$S/waveform.wbf" ] && [ "$(wc -c < "$d/run/device/waveform.wbf")" = 8192 ] \
-		|| { echo "seed: a failed write removed what the old manifest names (rc $rc)"; ls -a "$S"; return 1; }
-
-	# the read-write mount is refused: the seed is mounted read-only again and bound
-	: > "$f/rw_fails"
-	rc=0; seed refresh --now || rc=$?
-	rm "$f/rw_fails"
-	[ $rc = 1 ] && grep -q "cannot mount vendor_b read-write" "$d/log" && [ "$(wc -c < "$d/run/device/waveform.wbf")" = 8192 ] \
-		&& seed status >/dev/null || { echo "seed: not bound again after a refused read-write mount (rc $rc)"; return 1; }
-
-	# cut off before the manifest's rename: no manifest = no seed, copied again
-	rm "$d/run/device" "$S/manifest"; : > "$S/.manifest.new"
-	seed || { echo "seed: no manifest not redone"; return 1; }
-	[ -f "$S/manifest" ] || { echo "seed: no manifest written"; return 1; }
-
-	# the journal needs recovery: replayed, then verified
-	rm "$d/run/device"; : > "$f/needs_recovery"
-	seed || { echo "seed: journal"; return 1; }
-	[ ! -e "$f/needs_recovery" ] && grep -q "replaying" "$d/log" || { echo "seed: journal not replayed"; return 1; }
-
-	# a source that isn't a waveform: not copied, nothing bound
-	rm -rf "$f/part" "$d/run/device"; head -c 4096 /dev/zero > "$f/src/system_a/waveform/eink_waveform.wbf"
-	rc=0; seed || rc=$?
-	[ $rc = 1 ] && [ ! -e "$S/waveform.wbf" ] || { echo "seed: a bad waveform was copied (rc $rc)"; return 1; }
-
-	# the source's file system from util-linux's blkid (SEC_TYPE, PTTYPE): read;
-	# one the seed doesn't read: nothing copied
-	_wbf 4096 "$f/src/system_a/waveform/eink_waveform.wbf"
-	echo '/dev/sda5: LABEL="system" SEC_TYPE="ext2" TYPE="ext3" PARTLABEL="system_a" PTTYPE="dos"' > "$f/src/system_a.blkid"
-	rm -rf "$f/part" "$d/run/device"
-	seed || { echo "seed: util-linux blkid output not read"; cat "$d/log"; return 1; }
-	echo '/dev/sda5: UUID="a46c" TYPE="squashfs"' > "$f/src/system_a.blkid"
-	rm -rf "$f/part" "$d/run/device"; rc=0; seed || rc=$?
-	[ $rc = 1 ] && [ ! -e "$S/waveform.wbf" ] && grep -q "file system 'squashfs' not read" "$d/log" \
-		|| { echo "seed: an unknown file system was read (rc $rc)"; return 1; }
-
 	# the health check against a seed path
 	h="$srcdir/waveform.health"
 	_wbf 4096 "$d/w.wbf"
@@ -414,9 +324,7 @@ _check_bringup() {
 package() {
 	install -Dm755 "$srcdir"/glassine-clock "$pkgdir"/usr/sbin/glassine-clock
 	install -Dm755 "$srcdir"/glassine-ddr "$pkgdir"/usr/sbin/glassine-ddr
-	install -Dm755 "$srcdir"/glassine-device-seed "$pkgdir"/usr/sbin/glassine-device-seed
-	install -Dm755 "$srcdir"/glassine-device-seed.initd "$pkgdir"/etc/init.d/glassine-device-seed
-	install -Dm644 "$srcdir"/device-seed.conf "$pkgdir"/etc/glassine/device-seed.conf
+	install -Dm644 "$srcdir"/device-data.list "$pkgdir"/usr/share/glassine/device-data.list
 	install -Dm644 "$srcdir"/epd.conf "$pkgdir"/etc/glassine/epd.conf
 	install -Dm644 "$srcdir"/slots.conf "$pkgdir"/etc/glassine/slots.conf
 	install -Dm755 "$srcdir"/waveform.health "$pkgdir"/etc/glassine-bootimg/health.d/50-waveform
@@ -432,14 +340,12 @@ package() {
 	install -Dm644 "$srcdir"/splash.pgm "$pkgdir"/usr/share/glassine/splash.pgm
 }
 sha512sums="
-bfb3dad2f51753062df3f0ff7814d271d8edca6a00276c7625f48e54e65d980eaabdcbf62c17f4489fbbaad21d0c8783f98fe79fe06803754eea0ae30a182aea  device-seed.conf
-5f76149893ce3c94ca0d9849566c31303324069122a9b35356415222a90f6fd5992d3ee72f485be730116bd9b6cf158abb8dd60da51b688ad3ac36f0c166f4eb  epd.conf
+ba43ff2d8df9d0e09ab1c0785df2072c901fb43d643b7da816569c7e2b8cac02e5ef8d8e1c0cceb4f4de58241c1b6e6710fdd56b94d8c67a4523470636a6f06b  device-data.list
+ce8889318d8f4d60eb097ae77eaf68f3e1b49a2eb6abad264567b2672761f4b0d1a0202dd81df56891fba3084883cada6980d5594ea0a332622cb5d445a34cb0  epd.conf
 9706b48fca84aa8f0714f30994c648264612bdd078a21a51c9dbd5195445e2f3654068532c07818e9606e881c31a9820000a8dce7085dc00e9e69af1ef85abc1  glassine-clock
 25a60f5ab6c9a5592d33a107fc2a33c8eefc8601e9aa22ca965801cf1ec6db3e6152472591e8dd36460edec119466908c717c8195ecb34c44188f8ef69bca859  glassine-clock.initd
 35fabd4c4f1f6d5bd28fd1a0b0502e8dc969502ecddfdbd792338ed812ef867f5b893ab7c3bc5d3d63bbffcc0d1b570f8f2b19ff3c9142fe12e2f244b649ab34  glassine-clock.nm-dispatcher
 5946fc2ce4e8311e5be331a9c9bd305942340436bb4c7864e101365f633342f0b56c7a26a0e6453cfeff46dfb3a0c99db0a0f6c40f541e1562a1ed44338ce3d5  glassine-ddr
-4e5f5bdef8181315085536420f22232cb296ed7583ba872999e3ee8d96a7a4ee4730f5bdfd9a9f86122d2b857ba8455b62842d0e925454dea40a6acc9cbd4226  glassine-device-seed
-554a68313a19d93e40a81c82aedcca1249cfbb54ddb299c2833f3a9d07c5aa2a2a3f0776627283d51cb93c7310fc1fb87bc60a728b976603e0476c0bcdc827c6  glassine-device-seed.initd
 1f3f012fcfebda0093884eb3e7e6ecef835268f3b5a7646bf4690aa8970cefd4b7641fa64d36e86664ec31c098823acd22ed3ae6a453c0dce4ca0f08a66395af  glassine-session.confd
 5fa5ae86cbb297ce05fb06b34048d2c86796cc312a314eba1e24558b7d8f5ef0e7c119a29379e58b6d87cb8797776d58d75828d9d2dd163acb55857f7dbf5fb9  glassine-splash.initd
 89f4ec9d0ad1c59eab2a51e548c96a9d0801b46c97aafc63cae88d4d85807caf7a79ce1b05dee64557a663ad11772bc807722a86e699e796ff4549e8e8b6b79c  onyx-noteair-bringup

@@ -1,19 +1,20 @@
 # Maintainer: Moritz Meißelbach <moritz@glassine.org>
 # The Onyx Boox Note Air's system services and scripts. Its configuration files
 # (sysctl, sound routing) are in the device stage of GlassineOS/images, except the
-# panel adapter (/etc/glassine/epd.conf) and the device seed's list, which go with
-# the scripts that read them. The images device stage adds glassine-device-seed to
+# panel adapter (/etc/glassine/epd.conf), the device seed's list and Android's slot
+# (/etc/glassine/slots.conf, for the power menu), which go with the tools that read them. The images device stage adds glassine-device-seed to
 # sysinit.
 pkgname=device-onyx-noteair
 pkgver=2
-pkgrel=1
+pkgrel=2
 builddir="$srcdir"
-pkgdesc="Onyx Boox Note Air: clock, power modes, e-ink splash, panel adapter, device seed, boot tuning"
+pkgdesc="Onyx Boox Note Air: clock, power modes, e-ink splash, panel adapter, device seed, Android slot, boot tuning"
 url="https://github.com/GlassineOS/packages"
 arch="noarch"
 license="GPL-2.0-or-later"
 # e2fsprogs-extra (it needs e2fsprogs): dumpe2fs and debugfs (the seed reads ext4 without mounting)
-depends="busybox e2fsprogs e2fsprogs-extra glassine-epdd"
+# glassine-slot: the power menu's "Android" switches to the slot slots.conf names
+depends="busybox e2fsprogs e2fsprogs-extra glassine-epdd glassine-slot"
 source="device-seed.conf
 	epd.conf
 	glassine-clock
@@ -25,6 +26,7 @@ source="device-seed.conf
 	glassine-session.confd
 	glassine-splash.initd
 	onyx-noteair-tune.initd
+	slots.conf
 	waveform.health
 	"
 
@@ -226,6 +228,7 @@ package() {
 	install -Dm755 "$srcdir"/glassine-device-seed.initd "$pkgdir"/etc/init.d/glassine-device-seed
 	install -Dm644 "$srcdir"/device-seed.conf "$pkgdir"/etc/glassine/device-seed.conf
 	install -Dm644 "$srcdir"/epd.conf "$pkgdir"/etc/glassine/epd.conf
+	install -Dm644 "$srcdir"/slots.conf "$pkgdir"/etc/glassine/slots.conf
 	install -Dm755 "$srcdir"/waveform.health "$pkgdir"/etc/glassine-bootimg/health.d/50-waveform
 	install -Dm755 "$srcdir"/glassine-clock.initd "$pkgdir"/etc/init.d/glassine-clock
 	install -Dm755 "$srcdir"/glassine-splash.initd "$pkgdir"/etc/init.d/glassine-splash
@@ -247,5 +250,6 @@ bfb3dad2f51753062df3f0ff7814d271d8edca6a00276c7625f48e54e65d980eaabdcbf62c17f448
 1f3f012fcfebda0093884eb3e7e6ecef835268f3b5a7646bf4690aa8970cefd4b7641fa64d36e86664ec31c098823acd22ed3ae6a453c0dce4ca0f08a66395af  glassine-session.confd
 5fa5ae86cbb297ce05fb06b34048d2c86796cc312a314eba1e24558b7d8f5ef0e7c119a29379e58b6d87cb8797776d58d75828d9d2dd163acb55857f7dbf5fb9  glassine-splash.initd
 c82a04ed6cf8391dbbdd81c0fc5c1b3a3aec1cb87f68d4afbcf70c03f1098d29115273e3f2f409be0d3282fb6ddaeedc0918859e0fa1a20bce88e721af8daca2  onyx-noteair-tune.initd
+8f08c40570539754072a5b89e9c498a78f5b9307fda3a168cb0fa4961a7646946d3a066dbb163f6dc43f91e5d1a57f5e8a825218b5b0bb9bbbb8688cbfb6a2d7  slots.conf
 46dade4c54d7a4d91c26a658d0546a4a32583fa1e8cab12eab60b5bf6f710f6d6a2ef634c0b9dd95a087b1e86032bf7f4a56fcfd2a53a3f1759497ad63e6ba55  waveform.health
 "

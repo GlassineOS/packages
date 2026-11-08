@@ -4,17 +4,26 @@
 # (also installed as /usr/sbin/apk, before apk-tools' /sbin/apk on PATH; outside a
 # deployment it runs apk-tools unchanged). The device package provides
 # /etc/glassine/deploy.conf. The formats and exit codes are in boot's docs/deployments.md.
+# Also: glassine-mount-ro (shutdown: userdata and the system partition read-only at
+# power-off), the device data seed (glassine-device-seed: the device package's
+# /usr/share/glassine/device-data.list, boot's docs/kernel-artifacts.md) and developer
+# mode (glassine-devmode: USB networking and SSH with glassine.devmode=usb, boot's
+# README). The image links the seed into sysinit and developer mode into default.
 pkgname=glassine-deploy
-pkgver=0.3.0
+pkgver=0.4.0
 # GlassineOS/boot main
-_commit=f96e040fa571ca68de092618fc6609f8f54f68b7
+_commit=1ba4b071f603ad1f3173f15368065ae5d9381a04
 pkgrel=0
 pkgdesc="GlassineOS deployments: read-only bases, tried updates, reset, hibernation"
 url="https://github.com/GlassineOS/boot"
 arch="noarch"
 license="GPL-2.0-or-later"
-# debugfs and filefrag are in e2fsprogs-extra; ash, flock, awk and blkid in busybox
-depends="apk-tools busybox e2fsprogs e2fsprogs-extra openrc"
+# debugfs and filefrag are in e2fsprogs-extra; ash, flock, awk and blkid in busybox;
+# developer mode: udhcpd (busybox-extras), sshd and ssh-keygen (openssh-server, whose
+# own sshd service stays off). device-onyx-noteair before 4 shipped its own
+# glassine-device-seed.
+depends="apk-tools busybox busybox-extras e2fsprogs e2fsprogs-extra openrc openssh-server
+	!device-onyx-noteair<4"
 # the tests need privileged Docker (real btrfs and overlayfs); they run in boot's CI.
 # !tracedeps: no automatic provides, or /usr/sbin/apk would provide cmd:apk and
 # conflict with apk-tools (scripts only: the depends above are complete)
@@ -26,21 +35,23 @@ builddir="$srcdir/boot-$_commit"
 
 package() {
 	local f
-	for f in glassine glassine-deploy glassine-deploy-accept glassine-switch-hook glassine-hibernate; do
+	for f in glassine glassine-deploy glassine-deploy-accept glassine-switch-hook glassine-hibernate \
+		glassine-device-seed glassine-devmode; do
 		install -Dm755 sbin/$f "$pkgdir"/usr/sbin/$f
 	done
-	for f in glassine-switch glassine-deploy-accept; do
+	for f in glassine-switch glassine-mount-ro glassine-deploy-accept glassine-device-seed glassine-devmode; do
 		install -Dm755 openrc/$f "$pkgdir"/etc/init.d/$f
 	done
 	ln -s glassine "$pkgdir"/usr/sbin/apk
-	for f in glassine-state.sh glassine-root.sh glassine-accounts.sh; do
+	for f in glassine-state.sh glassine-root.sh glassine-accounts.sh glassine-device.sh; do
 		install -Dm644 lib/$f "$pkgdir"/usr/lib/glassine-boot/$f
 	done
 	install -Dm644 conf/deploy.conf.example "$pkgdir"/usr/share/glassine-boot/deploy.conf.example
 	install -Dm644 docs/deployments.md "$pkgdir"/usr/share/doc/$pkgname/deployments.md
+	install -Dm644 docs/kernel-artifacts.md "$pkgdir"/usr/share/doc/$pkgname/kernel-artifacts.md
 	# the accept step runs the same health checks as a kernel test boot (ACCEPT_HEALTH_DIR)
 	install -d "$pkgdir"/etc/glassine-bootimg/health.d "$pkgdir"/etc/glassine/hibernate.d
 }
 sha512sums="
-eb1dbfd5aace9dce547e3b105c036547f35c6fbef9881f4fc888a1cc58445dbba2b5c1b08c7b504bc58fe3432fe8153931b72fd8abbf3600a49d207cfc28ee1b  boot-f96e040fa571ca68de092618fc6609f8f54f68b7.tar.gz
+83347d4b259f9ee79012762a54b27b87dfa0d550f821605a5b118632f107da29b0b064ce445697176481c84e733d351f415568e5ed8cdce196f7c2585408281c  boot-1ba4b071f603ad1f3173f15368065ae5d9381a04.tar.gz
 "

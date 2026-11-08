@@ -1,0 +1,29 @@
+format=1
+# The Onyx Boox Note Air's own files: the seed copies them once from the device's
+# partitions (read read-only) to glassine/ on the board's DEVICE_PART, and the kernel
+# finds firmware/ there first. The format is in GlassineOS/boot docs/kernel-artifacts.md.
+# Paths on the vfat partitions (modem, bluetooth) are lower case. The modem's live file
+# systems (modemst1, modemst2, fsc, fsg) are never seeded: the modem service copies them
+# into memory at each boot.
+# NAME                                                SOURCE                                        CHECK
+# the panel's waveform
+waveform.wbf                                          system_a:/waveform/eink_waveform.wbf          wbf
+# the modem (with the WLAN firmware's DSP image) and the ADSP, by the names the
+# kernel's device tree requests
+firmware/qcom/sdm636/onyx/noteair/mba.mbn             modem:/image/mba.mbn
+firmware/qcom/sdm636/onyx/noteair/modem.*             modem:/image/modem.*
+firmware/qcom/sdm636/onyx/noteair/adsp.*              modem:/image/adsp.*
+firmware/qcom/sdm636/onyx/noteair/wlanmdsp.mbn        modem:/image/wlanmdsp.mbn
+# WiFi's board file (the device tree's board directory, onyx_noteair)
+firmware/ath10k/WCN3990/hw1.0/onyx_noteair/board.bin  modem:/image/bdwlan.bin
+# Bluetooth's firmware and NV file
+firmware/qca/crbtfw21.tlv                             bluetooth:/image/crbtfw21.tlv
+firmware/qca/crnv21.bin                               bluetooth:/image/crnv21.bin
+# the GPU's zap shader
+firmware/qcom/sdm636/onyx/noteair/a512_zap.*          vendor_a:/firmware/a512_zap.*
+# the speaker amplifier's tuning files, by the name the device tree gives it
+firmware/qcom/sdm636/onyx/noteair/aw88194_spk_reg.bin vendor_a:/firmware/awinic/aw881xx_pid_xx_l_spk_reg.bin
+firmware/qcom/sdm636/onyx/noteair/aw88194_spk_fw.bin  vendor_a:/firmware/awinic/aw881xx_pid_03_l_spk_fw.bin
+firmware/qcom/sdm636/onyx/noteair/aw88194_spk_cfg.bin vendor_a:/firmware/awinic/aw881xx_pid_03_l_spk_cfg.bin
+# the ADSP's sensor registry (this unit's factory calibration)
+firmware/qcom/sensors/sns.reg                         persist:/sensors/sns.reg

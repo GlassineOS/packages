@@ -1,0 +1,314 @@
+#!/bin/sh
+# onyx-noteair-bringup: the Onyx Boox Note Air's modem, ADSP, WiFi, Bluetooth and
+# sound card, brought up in that order, and a crash-loop breaker for the modem.
+#
+#   onyx-noteair-bringup run      what the service runs: up in the background, watch
+#   onyx-noteair-bringup up       every step once; each failure is logged, the next
+#                                 step runs anyway. Safe to run again: it loads WiFi
+#                                 again after the breaker unloaded it
+#   onyx-noteair-bringup watch    the breaker (and a dead daemon is started again)
+#   onyx-noteair-bringup down     stop rmtfs (which stops the modem), tqftpserv, the sink
+#   onyx-noteair-bringup status
+#
+# The WCN3990 WiFi runs on the modem, so the modem comes first. Firmware comes from
+# the kernel's firmware search path; nothing here mounts a partition, links into one
+# or copies firmware. The modem's own file systems (modemst1, modemst2, fsc, fsg) are
+# read once into memory (/run) and rmtfs serves those copies read-only (-r: what the
+# modem writes stays in rmtfs's memory and is never written back, not even to the
+# copies). tqftpserv keeps what the modem writes in /tmp.
+#
+# ath10k_snoc and hci_uart are not loaded by the device manager (modprobe.d), so
+# WiFi starts only once the modem runs and the diag sink is up, and Bluetooth after it.
+set -u
+SYS=${GLASSINE_BRINGUP_SYS:-/sys}
+DEV=${GLASSINE_BRINGUP_DEV:-/dev}
+PROC=${GLASSINE_BRINGUP_PROC:-/proc}
+RUN=${GLASSINE_BRINGUP_RUN:-/run/onyx-noteair-bringup}
+PARTS=${GLASSINE_BRINGUP_PARTS:-$DEV/disk/by-partlabel}
+EFS=$RUN/efs
+# the sound card's name (the device tree's model)
+CARD_MODEL="Onyx Note Air"
+# the breaker: this many modem crashes within WINDOW seconds unload WiFi
+CRASHES=3
+WINDOW=60
+
+log() { printf '%s\n' "onyx-noteair-bringup: $*"; }
+
+# wait_for SECONDS WHAT COMMAND...: until COMMAND succeeds, at most SECONDS
+wait_for() {
+	local n=$1 what=$2 i=0
+	shift 2
+	until "$@"; do
+		[ $i -ge "$n" ] && { log "$what: not there after ${n} s"; return 1; }
+		sleep 1; i=$((i + 1))
+	done
+}
+
+# mods MODULE...: load each; a failure is logged and the others still load
+mods() {
+	local m rc=0
+	for m in "$@"; do
+		modprobe "$m" || { log "modprobe $m failed"; rc=1; }
+	done
+	return $rc
+}
+
+# the modem's remoteproc: the one rmtfs -s drives (the same match as rmtfs)
+mss_rproc() {
+	local r
+	for r in "$SYS"/class/remoteproc/*; do
+		case $(cat "$r/device/modalias" 2>/dev/null) in
+		*-mss-pil*|*-mpss-pas*) echo "$r"; return 0 ;;
+		esac
+	done
+	return 1
+}
+
+rproc_named() {
+	local r
+	for r in "$SYS"/class/remoteproc/*; do
+		[ "$(cat "$r/name" 2>/dev/null)" = "$1" ] && { echo "$r"; return 0; }
+	done
+	return 1
+}
+
+rproc_running() { [ "$(cat "$1/state" 2>/dev/null)" = running ]; }
+
+modem_ready() { [ -e "$DEV/qcom_rmtfs_mem1" ] && mss_rproc >/dev/null; }
+modem_running() { local r; r=$(mss_rproc) && rproc_running "$r"; }
+adsp_present() { rproc_named adsp >/dev/null; }
+adsp_running() { local r; r=$(rproc_named adsp) && rproc_running "$r"; }
+wlan_present() { [ -e "$SYS/class/net/wlan0" ]; }
+hci_present() { [ -e "$SYS/class/bluetooth/hci0" ]; }
+card_present() { card_index >/dev/null; }
+
+alive() { [ -s "$1" ] && kill -0 "$(cat "$1")" 2>/dev/null; }
+
+# daemon NAME: the command line of the daemons this service runs
+daemon() {
+	case $1 in
+	qrtr-diag-sink) echo /usr/bin/qrtr-diag-sink ;;
+	tqftpserv) echo /usr/bin/tqftpserv ;;
+	rmtfs) echo "/usr/bin/rmtfs -r -s -o $EFS" ;;
+	esac
+}
+
+start_daemon() {
+	local name=$1 pf="$RUN/$1.pid"
+	alive "$pf" && return 0
+	# shellcheck disable=SC2046
+	set -- $(daemon "$name")
+	local bin=$1
+	shift
+	start-stop-daemon --start --background --make-pidfile --pidfile "$pf" \
+		--stdout "$RUN/$name.log" --stderr "$RUN/$name.log" --exec "$bin" -- "$@" \
+		|| { log "starting $name failed"; return 1; }
+}
+
+stop_daemon() {
+	local pf="$RUN/$1.pid"
+	[ -e "$pf" ] || return 0
+	alive "$pf" && start-stop-daemon --stop --pidfile "$pf" --retry 5 >/dev/null
+	rm -f "$pf"
+}
+
+# the modem's file systems, read into memory once per boot (rmtfs -o reads them
+# from here; the partitions themselves are only ever read, never opened by rmtfs)
+efs_copies() {
+	local m p f rc=0
+	mkdir -p "$EFS"
+	for m in modemst1:modem_fs1 modemst2:modem_fs2 fsc:modem_fsc fsg:modem_fsg; do
+		p=${m%%:*} f=${m#*:}
+		[ -s "$EFS/$f" ] && continue
+		if cat "$PARTS/$p" > "$EFS/.$f.new" 2>/dev/null && [ -s "$EFS/.$f.new" ]; then
+			mv "$EFS/.$f.new" "$EFS/$f"
+		else
+			rm -f "$EFS/.$f.new"; log "reading $p failed"; rc=1
+		fi
+	done
+	return $rc
+}
+
+step_modem() {
+	local rc=0 r
+	mods qrtr qrtr-smd rmtfs_mem qcom_pd_mapper qcom_sysmon qcom_q6v5_mss || rc=1
+	wait_for 10 "rmtfs memory and the modem's remoteproc" modem_ready || return 1
+	efs_copies || rc=1
+	# the sink before the modem boots: the WLAN firmware takes the modem down
+	# without it. rmtfs -s then boots the modem itself.
+	start_daemon qrtr-diag-sink || rc=1
+	start_daemon tqftpserv || rc=1
+	start_daemon rmtfs || return 1
+	wait_for 30 "the modem running" modem_running || rc=1
+	for r in "$SYS"/class/remoteproc/*; do
+		[ -e "$r/state" ] && log "remoteproc $(cat "$r/name" 2>/dev/null): $(cat "$r/state")"
+	done
+	return $rc
+}
+
+step_adsp() {
+	local r
+	# not always loaded by the device manager; without it there is no sound card
+	mods qcom_q6v5_pas
+	wait_for 10 "the ADSP's remoteproc" adsp_present || return 1
+	r=$(rproc_named adsp)
+	if [ "$(cat "$r/state")" = offline ]; then
+		echo start > "$r/state" || { log "starting the ADSP failed"; return 1; }
+	fi
+	wait_for 15 "the ADSP running" adsp_running
+}
+
+step_wifi() {
+	mods ath10k_snoc || return 1
+	wait_for 30 "wlan0" wlan_present && log "wlan0 up"
+}
+
+step_bluetooth() {
+	mods hci_uart || return 1
+	wait_for 15 "hci0" hci_present && log "hci0 present"
+}
+
+# the sound card's index in /proc/asound/cards ("NN [id]: driver - MODEL")
+card_index() {
+	awk -v m="- $CARD_MODEL" '$1 ~ /^[0-9]+$/ && index($0, m) { print $1; exit }' \
+		"$PROC/asound/cards" 2>/dev/null | grep .
+}
+
+step_sound() {
+	local rc=0 c x
+	mods q6afe-clocks q6afe-dai q6asm-dai q6adm q6routing aw88194 \
+		pinctrl-sdm660-lpass-lpi snd-soc-msm8916-digital snd-soc-sm8250 || rc=1
+	# the card binds once the ADSP's services are up
+	wait_for 60 "the sound card" card_present || return 1
+	c=$(card_index)
+	# speaker: MultiMedia1 (PCM 0) to the speaker back end
+	amixer -q -c "$c" cset name='SEC_MI2S_RX Audio Mixer MultiMedia1' 1 \
+		&& log "sound card $c up, speaker routed" || { log "speaker routing failed"; rc=1; }
+	# microphone: DMIC4 to DEC1 and DEC2 (the back end is stereo, so the
+	# microphone lands on both channels), to MultiMedia2 (PCM 1)
+	for x in "Digital DEC1 MUX=DMIC4" "Digital DEC2 MUX=DMIC4" "Digital CIC1 MUX=DMIC" \
+		"Digital CIC2 MUX=DMIC" "MultiMedia2 Mixer LPI_MI2S_TX_3=1"; do
+		amixer -q -c "$c" cset name="${x%=*}" "${x#*=}" || { log "microphone: '$x' failed"; rc=1; }
+	done
+	wireplumber_check
+	return $rc
+}
+
+# Workaround: the session's WirePlumber sometimes lists no ALSA device for a sound
+# card that appeared after it started (cause unknown; a restart finds the card).
+# Trigger: the card is there, a session WirePlumber runs, and 10 s later
+# `wpctl status`, as the session's user, still lists no [alsa] device. Then that
+# WirePlumber is stopped and started again with its own environment. Without a
+# session WirePlumber (none within 2 minutes) nothing is done.
+wireplumber_check() {
+	local p= i=0 u rd env="$RUN/wireplumber.env"
+	while :; do
+		p=$(pgrep -x wireplumber | head -n 1) && [ -n "$p" ] && break
+		[ $i -ge 60 ] && { log "no session WirePlumber"; return 0; }
+		sleep 2; i=$((i + 1))
+	done
+	sleep 10
+	u=$(stat -c %U "$PROC/$p") || return 0
+	rd=$(tr '\0' '\n' < "$PROC/$p/environ" | sed -n 's/^XDG_RUNTIME_DIR=//p')
+	if su -s /bin/sh "$u" -c "XDG_RUNTIME_DIR='$rd' wpctl status" 2>/dev/null | grep -q '\[alsa'; then
+		log "WirePlumber has the sound card"
+		return 0
+	fi
+	log "WirePlumber missed the sound card: starting it again"
+	tr '\0' '\n' < "$PROC/$p/environ" > "$env" && chmod 644 "$env"
+	kill "$p"
+	sleep 1
+	su -s /bin/sh "$u" -c "while IFS= read -r l; do export \"\$l\"; done < '$env'; exec setsid /usr/bin/wireplumber" \
+		> /dev/null 2>&1 < /dev/null &
+}
+
+up() {
+	local s failed=
+	mkdir -p "$RUN"
+	for s in modem adsp wifi bluetooth sound; do
+		log "$s"
+		step_$s || failed="$failed $s"
+	done
+	if [ -n "$failed" ]; then
+		log "up: done, failed:$failed"
+		return 1
+	fi
+	log "up: done"
+}
+
+# the modem's last crash number in the kernel log (remoteproc: "handling crash #N in NAME")
+crash_count() {
+	local re
+	re=$(printf '%s' "$1" | sed 's/[].[*^$\\/]/\\&/g')
+	dmesg | sed -n "s/.*handling crash #\([0-9]*\) in $re\$/\1/p" | tail -n 1
+}
+
+watch() {
+	# GLASSINE_BRINGUP_WATCH_ROUNDS: stop after that many rounds (the host test)
+	local r name n last=0 times= now max=${GLASSINE_BRINGUP_WATCH_ROUNDS:-0} i=0 d
+	if r=$(mss_rproc); then
+		name=$(cat "$r/name"); last=$(crash_count "$name"); last=${last:-0}
+	fi
+	while :; do
+		[ "$max" -gt 0 ] && [ $i -ge "$max" ] && break
+		i=$((i + 1))
+		sleep 5
+		# a daemon that died (its pid file is there, the process isn't) is started again
+		for d in qrtr-diag-sink tqftpserv rmtfs; do
+			if [ -e "$RUN/$d.pid" ] && ! alive "$RUN/$d.pid"; then
+				log "$d is gone: starting it again"
+				rm -f "$RUN/$d.pid"; start_daemon "$d"
+			fi
+		done
+		r=$(mss_rproc) || continue
+		name=$(cat "$r/name")
+		n=$(crash_count "$name"); n=${n:-0}
+		# the remoteproc was registered again: its count starts over
+		[ "$n" -lt "$last" ] && last=0
+		[ "$n" -gt "$last" ] || continue
+		now=$(cut -d. -f1 "$PROC/uptime")
+		log "modem crash #$n: $(dmesg | grep 'fatal error received' | tail -n 1 | sed 's/.*received: //')"
+		while [ "$last" -lt "$n" ]; do times="$times $now"; last=$((last + 1)); done
+		# shellcheck disable=SC2086
+		set -- $times
+		while [ $# -gt $CRASHES ]; do shift; done
+		times="$*"
+		if [ $# -eq $CRASHES ] && [ $((now - $1)) -le $WINDOW ]; then
+			log "crash loop ($CRASHES modem crashes within $WINDOW s): unloading ath10k, WiFi stays off until 'onyx-noteair-bringup up'"
+			rmmod ath10k_snoc ath10k_core || log "rmmod ath10k failed"
+			times=
+		fi
+	done
+}
+
+run() {
+	mkdir -p "$RUN"
+	up &
+	echo $! > "$RUN/up.pid"
+	trap 'kill "$(cat "$RUN/up.pid")" 2>/dev/null; exit 0' TERM INT
+	watch
+}
+
+down() {
+	stop_daemon rmtfs
+	stop_daemon tqftpserv
+	stop_daemon qrtr-diag-sink
+}
+
+status() {
+	local r d c
+	for r in "$SYS"/class/remoteproc/*; do
+		[ -e "$r/state" ] && echo "remoteproc $(cat "$r/name" 2>/dev/null): $(cat "$r/state")"
+	done
+	for d in qrtr-diag-sink tqftpserv rmtfs; do
+		alive "$RUN/$d.pid" && echo "$d: running" || echo "$d: not running"
+	done
+	wlan_present && echo "wlan0: present" || echo "wlan0: missing"
+	hci_present && echo "hci0: present" || echo "hci0: missing"
+	c=$(card_index) && echo "sound card: $c" || echo "sound card: missing"
+}
+
+case ${1:-} in
+run|up|watch|down|status) "$1" ;;
+*) echo "usage: onyx-noteair-bringup run|up|watch|down|status" >&2; exit 2 ;;
+esac

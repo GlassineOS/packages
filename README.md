@@ -43,7 +43,7 @@ arm64 host the packages are aarch64; elsewhere use an arm64 machine (the kernel 
 hours under QEMU). Pin a source with `scripts/pin-source.sh URL [NAME]` (fails on HTTP
 errors and broken archives; the `checksum` workflow runs it on a GitHub runner when
 GitHub rate-limits your network). `scripts/changed.sh BASE` lists what changed since `BASE`, in build
-order (keys, device, glassine, forks).
+order (keys, glassine, forks, device).
 
 A recipe may depend on packages of other recipes here: the build resolves those from
 the published repository when they aren't rebuilt in the same run (so on an

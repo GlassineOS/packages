@@ -1,0 +1,35 @@
+# Maintainer: Moritz Meißelbach <moritz@glassine.org>
+# qrtr-diag-sink: the application processor's side of Qualcomm DIAG over QRTR,
+# published and drained, for modems whose diag task waits for it. Mainline Linux
+# has no diag driver; without these servers the modem's watchdog takes the modem
+# down once its WLAN firmware runs. A device service starts it before the modem
+# boots.
+pkgname=qrtr-diag-sink
+pkgver=0.1.0
+pkgrel=0
+_commit=4c582abc3b227b12002d4092a12030be7623315c
+pkgdesc="Stand-in for the application processor's DIAG-over-QRTR servers"
+url="https://github.com/GlassineOS/qrtr-diag-sink"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="linux-headers"
+source="qrtr-diag-sink-$_commit.tar.gz::https://github.com/GlassineOS/qrtr-diag-sink/archive/$_commit.tar.gz"
+builddir="$srcdir/qrtr-diag-sink-$_commit"
+
+build() {
+	make CC="${CC:-cc}" CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS"
+}
+
+check() {
+	# the host test of the decisions and the argument parsing (no QRTR socket),
+	# and the usage exit codes
+	make CC="${CC:-cc}" CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" check
+}
+
+package() {
+	make DESTDIR="$pkgdir" PREFIX=/usr install
+}
+
+sha512sums="
+e9f55f9a0d8dfb84c1612cde520a7dc47be343912724df1fef7db3fcdda6bc13cd2ce5c5d3974b6dfcf743f077b2cd9af5c6415af26e7b8299a4bd46401e3365  qrtr-diag-sink-4c582abc3b227b12002d4092a12030be7623315c.tar.gz
+"

@@ -1,0 +1,5 @@
+# Onyx Boox Note Air: WiFi and Bluetooth are loaded by onyx-noteair-bringup, not by
+# the device manager: WiFi only once the modem runs with the diag sink up, and
+# Bluetooth after it. A module named on modprobe's command line still loads.
+blacklist ath10k_snoc
+blacklist hci_uart

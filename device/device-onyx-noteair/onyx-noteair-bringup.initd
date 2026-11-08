@@ -1,0 +1,31 @@
+#!/sbin/openrc-run
+# The Onyx Boox Note Air's modem, ADSP, WiFi, Bluetooth and sound card, in that
+# order, then the modem's crash-loop breaker (onyx-noteair-bringup). The bring-up
+# takes up to a few minutes and runs in the background; the service's process is
+# the breaker. Log: /var/log/onyx-noteair-bringup.log. Stopping it stops rmtfs,
+# and with it the modem.
+description="Onyx Boox Note Air modem, ADSP, WiFi, Bluetooth and sound card"
+
+command=/usr/sbin/onyx-noteair-bringup
+command_args=run
+command_background=yes
+pidfile=/run/onyx-noteair-bringup/run.pid
+output_log=/var/log/onyx-noteair-bringup.log
+error_log=/var/log/onyx-noteair-bringup.log
+
+depend() {
+	need localmount
+	after udev-settle
+	# bluetoothd needs the Bluetooth stack, which comes with the radio's module
+	before networkmanager bluetooth
+}
+
+start_pre() {
+	checkpath -d -m 0755 /run/onyx-noteair-bringup
+	[ -f "$output_log" ] && mv -f "$output_log" "$output_log.1"
+	modprobe -q bluetooth || :
+}
+
+stop_post() {
+	/usr/sbin/onyx-noteair-bringup down
+}

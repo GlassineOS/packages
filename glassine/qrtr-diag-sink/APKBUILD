@@ -1,0 +1,42 @@
+# Maintainer: Moritz Meißelbach <moritz@glassine.org>
+# qrtr-diag-sink: the application processor's side of Qualcomm DIAG over QRTR,
+# published and drained, for modems whose diag task waits for it. Mainline Linux
+# has no diag driver; without these servers the modem's watchdog takes the modem
+# down once its WLAN firmware runs. A device service starts it before the modem
+# boots. The source is in this directory (no GlassineOS repository holds it yet).
+pkgname=qrtr-diag-sink
+pkgver=1
+pkgrel=0
+pkgdesc="Stand-in for the application processor's DIAG-over-QRTR servers"
+url="https://github.com/GlassineOS/packages"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="linux-headers"
+source="qrtr-diag-sink.c
+	sink-test.c
+	"
+builddir="$srcdir"
+
+build() {
+	${CC:-cc} $CFLAGS -Wall -Wextra $LDFLAGS -o qrtr-diag-sink qrtr-diag-sink.c
+}
+
+check() {
+	# the decisions and the argument parsing, without a QRTR socket
+	${CC:-cc} $CFLAGS -Wall -Wextra $LDFLAGS -o sink-test sink-test.c
+	./sink-test
+	# usage errors exit 2 before any socket is opened
+	local rc
+	rc=0; ./qrtr-diag-sink bogus 2>/dev/null || rc=$?
+	[ $rc = 2 ] || { echo "an unknown command exits $rc, not 2"; return 1; }
+	rc=0; ./qrtr-diag-sink serve 4097 2>/dev/null || rc=$?
+	[ $rc = 2 ] || { echo "serve without an instance exits $rc, not 2"; return 1; }
+}
+
+package() {
+	install -Dm755 qrtr-diag-sink "$pkgdir"/usr/bin/qrtr-diag-sink
+}
+sha512sums="
+9efb23eba1f51766533fcc212240c637f4bb580a0239daa5d1c3ae17d2462699dd800d23859bad89e5588779e02cbe192a34e067553f7007a8f4bac0ee59571a  qrtr-diag-sink.c
+63ebf81b5f50d3469c9ca698a090651b780299d6e5f0cd284685d1a6b76b9d14a9fb79c90a2fde9085a7629542eb49cf2ddb2a214e57b94616f8ca519e18a7f9  sink-test.c
+"

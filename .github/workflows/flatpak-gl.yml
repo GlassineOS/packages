@@ -1,0 +1,86 @@
+# The Flatpak GL extension org.freedesktop.Platform.GL.glassine (flatpak/): built and
+# checked on a native arm64 runner for each runtime branch apps use. Pull requests and
+# branches keep the bundles as an artifact; on main, a release
+# gl-glassine-<Mesa version>-<release> carries them (the source of the
+# mesa-flatpak-glassine package), once per release number.
+name: flatpak-gl
+on:
+  push:
+    paths:
+      - flatpak/org.freedesktop.Platform.GL.glassine/**
+      - forks/mesa/APKBUILD
+      - forks/mesa/glassine-*.patch
+      - .github/workflows/flatpak-gl.yml
+  pull_request:
+    paths:
+      - flatpak/org.freedesktop.Platform.GL.glassine/**
+      - forks/mesa/APKBUILD
+      - forks/mesa/glassine-*.patch
+      - .github/workflows/flatpak-gl.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        # 25.08: org.freedesktop.Platform//25.08 (Chromium); 26.08: org.gnome.Platform//51
+        # and org.freedesktop.Platform//26.08 (Newsflash)
+        branch: ['25.08', '26.08']
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build
+        run: |
+          export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+          flatpak/org.freedesktop.Platform.GL.glassine/build.sh ${{ matrix.branch }} out
+      - name: Check
+        run: flatpak/org.freedesktop.Platform.GL.glassine/check.sh ${{ matrix.branch }} out
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: gl-glassine-${{ matrix.branch }}-${{ github.sha }}
+          retention-days: 14
+          path: |
+            out/*.flatpak
+            out/*.commit
+            out/*.log
+
+  release:
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && !github.event.repository.private
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: gl-glassine-*-${{ github.sha }}
+          merge-multiple: true
+          path: out
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mesa=$(sed -n 's/^pkgver=//p' forks/mesa/APKBUILD)
+          rel=$(cat flatpak/org.freedesktop.Platform.GL.glassine/release)
+          tag=gl-glassine-$mesa-$rel
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "::notice::$tag exists; raise flatpak/org.freedesktop.Platform.GL.glassine/release for a new one"
+            exit 0
+          fi
+          cd out
+          sha256sum *.flatpak *.commit > SHA256SUMS
+          gh release create "$tag" --target "$GITHUB_SHA" --title "$tag" \
+            --notes "org.freedesktop.Platform.GL.glassine: Mesa $mesa with the forks/mesa glassine patches, built from $GITHUB_SHA. Bundles for the runtime branches 25.08 and 26.08 (aarch64)." \
+            *.flatpak *.commit SHA256SUMS

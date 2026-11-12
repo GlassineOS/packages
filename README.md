@@ -11,6 +11,7 @@ CI that builds, signs and publishes them to
 | `device/` | kernels and device packages (`linux-glassine-sdm660`, …) |
 | `glassine/` | our own software |
 | `forks/` | patched upstream software, renamed and installed beside the original (`sway-glassine` installs `/usr/bin/sway-glassine`, Alpine's `sway` stays), or an Alpine recipe rebuilt with our patches under Alpine's names (`mesa`) |
+| `flatpak/` | Flatpak builds that devices get through a package here (see below) |
 
 A recipe directory has the name of its main package. Sources come from tags or pinned
 commits of the GlassineOS repositories (checksum in the recipe); patches live in those
@@ -59,6 +60,33 @@ architecture without a published repository, build them together).
   deploys everything to GitHub Pages. Only the newest version of each package stays.
   Needs the repository to be public (environments and Pages on private repositories
   need a paid plan).
+
+## Flatpak GL extension
+
+Flatpak apps don't use the system Mesa: they take Mesa from a GL extension of their
+runtime, Flathub's `org.freedesktop.Platform.GL.default` unless told otherwise. Ours is
+`org.freedesktop.Platform.GL.glassine`, built by
+`flatpak/org.freedesktop.Platform.GL.glassine/build.sh BRANCH` from the same Mesa
+version and `glassine-*.patch` files as `forks/mesa` (freedreno, with softpipe as the
+fallback; no Vulkan). A session selects it with `FLATPAK_GL_DRIVERS=glassine:default`.
+It is built for each runtime branch apps use (`25.08`, `26.08`), since an extension
+only applies to a runtime with the same GL version.
+
+- Its `libgallium` is `libgallium-<version>-glassine.so`, so it never collides with
+  GL.default's when both carry the same Mesa version.
+- Its `[ExtensionOf]` priority is 10: Flatpak orders GL extensions by priority, then by
+  name, never by `FLATPAK_GL_DRIVERS`, and the first one supplies the merged EGL vendor
+  file and DRI drivers.
+- `check.sh BRANCH` installs the bundle into an empty system installation, pins and
+  masks it, runs `uninstall --unused` and `update`, then checks inside a sandbox with
+  GL.default beside it that our EGL vendor file and DRI driver are the ones merged.
+
+The `flatpak-gl` workflow builds and checks both branches on an arm64 runner for pull
+requests and branches (artifact, 14 days). On `main` it creates the release
+`gl-glassine-<Mesa version>-<release>` with the bundles and their commits, once per
+number in `flatpak/org.freedesktop.Platform.GL.glassine/release` (raise it for a new
+build of the same Mesa; a new Mesa version starts again at 1). Devices don't download
+it: a package here ships the bundles and installs them at boot, so it works offline.
 
 ## Signing key
 

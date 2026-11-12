@@ -1,0 +1,30 @@
+#!/sbin/openrc-run
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Before the desktop session: the Flatpak GL extension org.freedesktop.Platform.GL.glassine
+# from this package's bundles, installed system-wide and pinned
+# (mesa-flatpak-glassine-sync). A no-op once the installed commits match. Flatpak's
+# system data is /var/lib/flatpak; in a deployment the initramfs binds it from userdata
+# before any service starts, so the extension is installed once per userdata, not per
+# base. Without that bind (a bare boot, or a failed bind) nothing is installed: it would
+# land in the deployment's own directory, hidden again on the next boot with the bind.
+# Never fails the boot: apps then use Flathub's Mesa.
+description="Install our Mesa for Flatpak apps (GL extension glassine)"
+LOG=/var/log/mesa-flatpak-glassine.log
+
+depend() {
+	need localmount
+	after bootmisc
+	before glassine-session
+}
+
+start() {
+	# the boot's report of the binds (GlassineOS/boot, gr_storage): flatpak=bound
+	if [ -e /run/glassine/storage ] && ! grep -qx flatpak=bound /run/glassine/storage; then
+		einfo "Flatpak's data isn't on userdata this boot: GL extension not installed"
+		return 0
+	fi
+	ebegin "Installing our Mesa for Flatpak apps"
+	timeout 1300 /usr/sbin/mesa-flatpak-glassine-sync >>"$LOG" 2>&1
+	eend $? "see $LOG"
+	return 0
+}

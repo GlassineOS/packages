@@ -4,9 +4,9 @@
 # C library for native programs (the shell, Home); py3-glassine-ui is the same for
 # the GTK/cairo programs (Settings, the first-run setup).
 pkgname=glassine-ui
-pkgver=1.0.0_git20261107
+pkgver=1.1.0
 # GlassineOS/ui main
-_commit=b172188c9e27314fb481d93e863ec4ffe86cb0c5
+_commit=77ed45f37ff8fbc1ce2acf8321a17b87a64cbbc5
 pkgrel=0
 pkgdesc="GlassineOS desktop look: the voices and the drawing built on them"
 url="https://github.com/GlassineOS/ui"
@@ -35,8 +35,9 @@ build() {
 	make PREFIX=/usr
 }
 
+# the library's tests; the forms and design-board checks (Node, Chromium) run in ui's CI
 check() {
-	make PREFIX=/usr check
+	make PREFIX=/usr check-lib
 }
 
 package() {
@@ -50,5 +51,5 @@ py3() {
 }
 
 sha512sums="
-f5d08658b2cc83a876669d4a214688d4985873cd750f2cbe126e932b289491457ad0f32db1b7b7ee52cfa226b678094a20d721f772c0381312d0100a865dd157  ui-b172188c9e27314fb481d93e863ec4ffe86cb0c5.tar.gz
+94081a9727b94e880b4a1822d2c3165fc28b0be87bc1405efec00e74087f6c0fd860f52a2b95da48c3d9b05c7ba39383cbd54de90156dd806e9cd82e88f61a72  ui-77ed45f37ff8fbc1ce2acf8321a17b87a64cbbc5.tar.gz
 "

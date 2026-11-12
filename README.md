@@ -84,7 +84,9 @@ only applies to a runtime with the same GL version.
 The `flatpak-gl` workflow builds and checks both branches on an arm64 runner for pull
 requests and branches (artifact, 14 days). On `main` it creates the release
 `gl-glassine-<Mesa version>-r<forks/mesa pkgrel>-<release>` with the bundles and their
-commits, once per tag: a patch change in `forks/mesa` raises its `pkgrel` and so makes a
+commits, once per tag, after an approval in the `flatpak-release` environment (its own,
+so the job that writes releases never sees the signing key; same reviewers, `main`
+only, no secrets). A patch change in `forks/mesa` raises its `pkgrel` and so makes a
 new release; a change to the extension's own build raises the number in
 `flatpak/org.freedesktop.Platform.GL.glassine/release`. Devices don't download
 it: a package here ships the bundles and installs them at boot, so it works offline.

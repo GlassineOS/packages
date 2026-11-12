@@ -1,0 +1,50 @@
+# Maintainer: Moritz Meißelbach <moritz@glassine.org>
+# The Home screen, from GlassineOS/home: pages of widgets on a fixed grid, drawn with
+# GlassineOS/ui, and the sandboxed Lua widget runtime (glassine-home-run). The session
+# (glassine-shell) starts it as the home app (app_id glassine-home) and keeps it in
+# sway's scratchpad.
+pkgname=glassine-home
+pkgver=0_git20261112
+# GlassineOS/home main
+_commit=7ccdfdde7b402ebe593cfc727f2d4b02bcf8b0b4
+pkgrel=0
+pkgdesc="GlassineOS Home screen and its widget runtime"
+url="https://github.com/GlassineOS/home"
+arch="all"
+license="GPL-2.0-or-later"
+makedepends="
+	cairo-dev
+	gdk-pixbuf-dev
+	glassine-ui-dev
+	glib-dev
+	librsvg-dev
+	libxkbcommon-dev
+	linux-headers
+	lua5.4-dev
+	pango-dev
+	wayland-dev
+	wayland-protocols
+	"
+# the screen tests draw the design's boards offscreen with these fonts and icons
+checkdepends="
+	adwaita-icon-theme
+	font-dejavu
+	font-eb-garamond
+	"
+source="home-$_commit.tar.gz::$url/archive/$_commit.tar.gz"
+builddir="$srcdir/home-$_commit"
+
+build() {
+	make UI_SYSTEM=1 PREFIX=/usr
+}
+
+check() {
+	make UI_SYSTEM=1 PREFIX=/usr check
+}
+
+package() {
+	make UI_SYSTEM=1 DESTDIR="$pkgdir" PREFIX=/usr install
+}
+sha512sums="
+eaabdfe21ffc4e0b5d537ea3e162d52352fb981a6f55176c88444061736a58b00d0dce878a38d51406391df47ed676cad07b36f56803b60ab7708333484664b2  home-7ccdfdde7b402ebe593cfc727f2d4b02bcf8b0b4.tar.gz
+"

@@ -1,0 +1,5 @@
+#!/bin/sh
+# group desktop: the desktop users (the first-run setup adds its account); the
+# power and settings helpers run without a password for its members (doas.d)
+addgroup -S desktop 2>/dev/null
+exit 0

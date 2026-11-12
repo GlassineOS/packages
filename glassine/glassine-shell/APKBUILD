@@ -65,6 +65,7 @@ makedepends="
 	wayland-protocols
 	"
 subpackages="$pkgname-fonts:fonts:noarch"
+install="$pkgname.pre-install"
 source="shell-$_commit.tar.gz::https://github.com/GlassineOS/shell/archive/$_commit.tar.gz
 	IBMPlexSans-VF.ttf::$_gf/ibmplexsans/IBMPlexSans%5Bwdth%2Cwght%5D.ttf
 	IBMPlexMono-Regular.ttf::$_gf/ibmplexmono/IBMPlexMono-Regular.ttf

@@ -6,8 +6,8 @@
 pkgname=glassine-home
 pkgver=0_git20261112
 # GlassineOS/home main
-_commit=7ccdfdde7b402ebe593cfc727f2d4b02bcf8b0b4
-pkgrel=0
+_commit=29a3e23605819023b24c18798be6d7ccb5d7c992
+pkgrel=1
 pkgdesc="GlassineOS Home screen and its widget runtime"
 url="https://github.com/GlassineOS/home"
 arch="all"
@@ -46,5 +46,5 @@ package() {
 	make UI_SYSTEM=1 DESTDIR="$pkgdir" PREFIX=/usr install
 }
 sha512sums="
-eaabdfe21ffc4e0b5d537ea3e162d52352fb981a6f55176c88444061736a58b00d0dce878a38d51406391df47ed676cad07b36f56803b60ab7708333484664b2  home-7ccdfdde7b402ebe593cfc727f2d4b02bcf8b0b4.tar.gz
+5239805c28df2b006eb1db04981081aa8cf2e04ab183e08e5699c41f955d932c065faf92e76cc0afec131f7a726f8de243fdf6870071700aa864a585ae2875a5  home-29a3e23605819023b24c18798be6d7ccb5d7c992.tar.gz
 "

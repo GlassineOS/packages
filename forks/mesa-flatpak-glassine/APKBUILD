@@ -1,0 +1,47 @@
+# Maintainer: Moritz Meißelbach <moritz@glassine.org>
+# Our Mesa for Flatpak apps: the GL extension org.freedesktop.Platform.GL.glassine
+# (flatpak/org.freedesktop.Platform.GL.glassine here: forks/mesa's Mesa version and
+# patches, built against each runtime branch apps use), as the bundles of this
+# repository's release gl-glassine-$pkgver-$_rel, and a boot service that installs them
+# system-wide and pins them before the desktop session (mesa-flatpak-glassine-sync).
+# A session uses it with FLATPAK_GL_DRIVERS=glassine:default. Freedreno and softpipe
+# only, and it comes before GL.default, so only a device with an Adreno GPU that
+# freedreno drives installs this package; its image enables the service.
+pkgname=mesa-flatpak-glassine
+pkgver=26.1.6
+# the release number of the bundles (flatpak/org.freedesktop.Platform.GL.glassine/release)
+_rel=1
+pkgrel=0
+pkgdesc="Mesa with the GlassineOS freedreno patches for Flatpak apps"
+url="https://github.com/GlassineOS/packages"
+arch="aarch64"
+license="MIT AND SGI-B-2.0 AND BSL-1.0"
+depends="flatpak"
+# prebuilt bundles: nothing to strip or test here (flatpak-gl's check.sh tests them)
+options="!check !strip"
+_id=org.freedesktop.Platform.GL.glassine
+_branches="25.08 26.08"
+_url=$url/releases/download/gl-glassine-$pkgver-$_rel
+source="mesa-flatpak-glassine-sync
+	mesa-flatpak-glassine.initd
+	"
+for _b in $_branches; do
+	source="$source
+	$_id-$_b-$CARCH-$pkgver-$_rel.flatpak::$_url/$_id-$_b-$CARCH.flatpak
+	$_id-$_b-$CARCH-$pkgver-$_rel.commit::$_url/$_id-$_b-$CARCH.commit
+	"
+done
+
+package() {
+	local b
+	install -Dm755 "$srcdir"/mesa-flatpak-glassine-sync "$pkgdir"/usr/sbin/mesa-flatpak-glassine-sync
+	install -Dm755 "$srcdir"/mesa-flatpak-glassine.initd "$pkgdir"/etc/init.d/mesa-flatpak-glassine
+	for b in $_branches; do
+		install -Dm644 "$srcdir"/$_id-$b-$CARCH-$pkgver-$_rel.flatpak \
+			"$pkgdir"/usr/share/mesa-flatpak-glassine/$b.flatpak
+		install -Dm644 "$srcdir"/$_id-$b-$CARCH-$pkgver-$_rel.commit \
+			"$pkgdir"/usr/share/mesa-flatpak-glassine/$b.commit
+	done
+}
+# sha512sums: run `abuild checksum` (or scripts/pin-source.sh on each bundle URL) once
+# the release gl-glassine-$pkgver-$_rel exists (the flatpak-gl workflow on main)

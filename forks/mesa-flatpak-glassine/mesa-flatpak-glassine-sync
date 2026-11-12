@@ -1,0 +1,44 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Install the Flatpak GL extension org.freedesktop.Platform.GL.glassine system-wide from
+# the bundles in /usr/share/mesa-flatpak-glassine (one per runtime branch, each with the
+# OSTree commit it holds), when the installed commit differs. Offline: a bundle needs
+# no remote. Then, for each branch:
+#  - pin it: no app refers to a GL extension by name, so "flatpak uninstall --unused"
+#    (the Flatpak update job, app stores) would remove it, and apps would fall back to
+#    Flathub's GL.default;
+#  - mask it: its origin is the bundle, which has no remote to update from.
+# The boot service runs this before the desktop session; run it by hand after a live
+# upgrade of this package to use the new bundles without a reboot (apps started after
+# it get them).
+#
+#   mesa-flatpak-glassine-sync     exit 0, or 1 if a branch failed (the log says which)
+#
+# FLATPAK_SYSTEM_DIR picks another installation (tests), MESA_FLATPAK_DIR another
+# bundle directory.
+set -u
+id=org.freedesktop.Platform.GL.glassine
+dir=${MESA_FLATPAK_DIR:-/usr/share/mesa-flatpak-glassine}
+arch=$(flatpak --default-arch 2>/dev/null) || { echo "flatpak isn't installed" >&2; exit 1; }
+rc=0
+for c in "$dir"/*.commit; do
+	[ -e "$c" ] || continue
+	branch=${c##*/}
+	branch=${branch%.commit}
+	ref=runtime/$id/$arch/$branch
+	bundle=$dir/$branch.flatpak
+	want=$(cat "$c")
+	have=$(flatpak info --system -c "$ref" 2>/dev/null) || have=
+	if [ "$have" != "$want" ]; then
+		echo "$id//$branch: ${have:-not installed} -> $want"
+		if ! timeout 600 flatpak install --system -y --noninteractive --reinstall --no-related \
+			--no-deps --bundle "$bundle"; then
+			echo "$id//$branch: installing $bundle failed" >&2
+			rc=1
+			continue
+		fi
+	fi
+	flatpak pin --system | sed "s/^ *//" | grep -qxF "$ref" || flatpak pin --system "$ref" || rc=1
+	flatpak mask --system | sed "s/^ *//" | grep -qxF "$id//$branch" || flatpak mask --system "$id//$branch" || rc=1
+done
+exit $rc

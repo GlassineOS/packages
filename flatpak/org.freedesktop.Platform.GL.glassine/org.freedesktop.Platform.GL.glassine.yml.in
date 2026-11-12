@@ -1,0 +1,92 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Flatpak GL extension org.freedesktop.Platform.GL.glassine: Mesa with the GlassineOS
+# freedreno patches, for Flatpak apps on an Adreno 5xx (freedreno), with softpipe as the
+# fallback. build.sh fills in the @...@ fields: the branch (the runtime's GL version,
+# e.g. 25.08), the architecture, Mesa's version and checksum from forks/mesa/APKBUILD,
+# and one patch source per forks/mesa/glassine-*.patch, in name order. So the extension
+# and the system Mesa always carry the same Mesa and the same patches.
+id: org.freedesktop.Platform.GL.glassine
+branch: '@BRANCH@'
+runtime: org.freedesktop.Platform
+runtime-version: '@BRANCH@'
+sdk: org.freedesktop.Sdk
+build-extension: true
+separate-locales: false
+appstream-compose: false
+build-options:
+  prefix: /usr/lib/@ARCH@-linux-gnu/GL/glassine
+  libdir: /usr/lib/@ARCH@-linux-gnu/GL/glassine/lib
+  no-debuginfo: true
+  strip: true
+cleanup:
+  - /include
+  - /lib/pkgconfig
+  - /share/pkgconfig
+  - /pydeps
+modules:
+  # Mesa's build needs PyYAML, which the Sdk lacks. Its pure Python half is enough;
+  # it stays out of the extension (cleanup above).
+  - name: pyyaml
+    buildsystem: simple
+    build-commands:
+      - mkdir -p ${FLATPAK_DEST}/pydeps
+      - cp -r lib/yaml ${FLATPAK_DEST}/pydeps/
+    sources:
+      - type: archive
+        url: https://files.pythonhosted.org/packages/05/8e/961c0007c59b8dd7729d542c61a4d537767a59645b82a0b521206e1e25c2/pyyaml-6.0.3.tar.gz
+        sha256: d76623373421df22fb4cf8817020cbb7ef15c725b9d5e45f17e189bfc384190f
+
+  - name: mesa
+    buildsystem: meson
+    build-options:
+      env:
+        PYTHONPATH: /usr/lib/@ARCH@-linux-gnu/GL/glassine/pydeps
+    config-opts:
+      - -Dbuildtype=release
+      - -Db_ndebug=true
+      - -Dgallium-drivers=freedreno,softpipe
+      - -Dfreedreno-kmds=msm
+      - -Dvulkan-drivers=
+      - -Dllvm=disabled
+      - -Dplatforms=x11,wayland
+      - -Dglx=dri
+      - -Degl=enabled
+      - -Dgbm=enabled
+      - -Dglvnd=enabled
+      - -Dgles1=disabled
+      - -Dgles2=enabled
+      - -Dgallium-va=disabled
+      - -Dgallium-rusticl=false
+      - -Dvideo-codecs=
+      - -Dtools=
+      - -Dbuild-tests=false
+      - -Dvalgrind=disabled
+      - -Dlibunwind=disabled
+      - -Dperfetto=false
+      - -Dzstd=enabled
+      - -Dexpat=enabled
+    sources:
+      - type: archive
+        # the same file as forks/mesa's source; mesa.freedesktop.org resets connections
+        # from CI runners
+        url: https://archive.mesa3d.org/mesa-@MESA_VERSION@.tar.xz
+        mirror-urls:
+          - https://mesa.freedesktop.org/archive/mesa-@MESA_VERSION@.tar.xz
+        sha512: @MESA_SHA512@
+@PATCHES@
+      # libgallium-<version>-glassine.so: GL.default can ship the same Mesa version, so
+      # an unsuffixed libgallium would load from whichever extension comes first in the
+      # library path. libEGL_mesa, libGLX_mesa and dri_gbm.so link it by this name.
+      - type: shell
+        commands:
+          - sed -i "s/'gallium-@0@'.format(meson.project_version())/'gallium-@0@-glassine'.format(meson.project_version())/" src/gallium/targets/dri/meson.build
+          - grep -q "gallium-@0@-glassine" src/gallium/targets/dri/meson.build
+    post-install:
+      # The runtime merges glvnd/egl_vendor.d from every enabled GL extension, the first
+      # extension winning a file name (see the priority in build.sh). This one names our
+      # libEGL_mesa by its full path, so no library search decides which Mesa loads.
+      - install -d ${FLATPAK_DEST}/glvnd/egl_vendor.d
+      - |
+        printf '{\n    "file_format_version" : "1.0.0",\n    "ICD" : {\n        "library_path" : "%s"\n    }\n}\n' \
+          "${FLATPAK_DEST}/lib/libEGL_mesa.so.0" > ${FLATPAK_DEST}/glvnd/egl_vendor.d/50_mesa.json
+      - cp ${FLATPAK_DEST}/glvnd/egl_vendor.d/50_mesa.json ${FLATPAK_DEST}/share/glvnd/egl_vendor.d/50_mesa.json

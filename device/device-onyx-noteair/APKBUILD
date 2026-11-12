@@ -5,6 +5,7 @@
 # for the power menu), which go with the tools that read them.
 # device-data.list names the device's own files (waveform, firmware) for the seed of
 # GlassineOS/boot (in glassine-deploy: the seed service and the initramfs read it).
+# networkmanager-wlan.conf: a stable WiFi MAC (the chip gives the driver none).
 # glassine-powerd: the sleep policy (power key, cover, idle; sticky sleep with WiFi
 # and Bluetooth off) and the front light, also the managed one (power.conf).
 # onyx-noteair-bringup brings up the modem, ADSP, WiFi, Bluetooth and the sound card
@@ -22,9 +23,10 @@ license="GPL-2.0-or-later"
 # glassine-slot: the power menu's "Android" switches to the slot slots.conf names
 # onyx-noteair-bringup: qrtr (qrtr-lookup, to look at the modem's services), rmtfs and
 # tqftpserv (the modem's file systems and file server), qrtr-diag-sink (without it the
-# WLAN firmware takes the modem down), alsa-utils (amixer: the sound routing)
+# WLAN firmware takes the modem down), alsa-utils (amixer: the sound routing),
+# bluez-btmgmt (the Bluetooth address: the chip has none)
 depends="busybox glassine-deploy>=0.4.0 glassine-epdd glassine-slot
-	alsa-utils qrtr qrtr-diag-sink rmtfs tqftpserv"
+	alsa-utils bluez-btmgmt qrtr qrtr-diag-sink rmtfs tqftpserv"
 source="device-data.list
 	epd.conf
 	glassine-clock
@@ -36,6 +38,7 @@ source="device-data.list
 	glassine-session.confd
 	glassine-splash.initd
 	hwclock.confd-shutdown
+	networkmanager-wlan.conf
 	onyx-noteair-bringup
 	onyx-noteair-bringup.initd
 	onyx-noteair-bringup.modprobe
@@ -268,6 +271,7 @@ _check_bringup() {
 		S
 		printf '#!/bin/sh\necho "amixer $*" >> "$B/calls"\n[ ! -e "$B/amixer_fails" ]\n' > "$bin/amixer"
 		printf '#!/bin/sh\necho "rmmod $*" >> "$B/calls"\n' > "$bin/rmmod"
+		printf '#!/bin/sh\ncat > /dev/null; echo "btmgmt $*" >> "$B/calls"\n[ -e "$B/btmgmt_rejects" ] && [ "$3" = public-addr ] && [ ! -e "$B/bt_off" ] && { echo "Set Public Address for hci0 failed: Rejected"; exit 0; }\ncase "$3 $4" in "power off") : > "$B/bt_off" ;; "power on") rm -f "$B/bt_off" ;; *public-addr*) echo "hci0 Set Public Address complete" ;; esac\n' > "$bin/btmgmt"
 		printf '#!/bin/sh\ncat "$B/dmesg"\n' > "$bin/dmesg"
 		printf '#!/bin/sh\n[ -s "$B/wp.pid" ] && cat "$B/wp.pid"\n' > "$bin/pgrep"
 		printf '#!/bin/sh\nwhile [ $# -gt 0 ] && [ "$1" != -c ]; do shift; done\nexec sh -c "$2"\n' > "$bin/su"
@@ -281,7 +285,7 @@ _check_bringup() {
 		mkdir -p "$B/proc/$W"; printf 'XDG_RUNTIME_DIR=/run/user/1000\0FOO=bar\0' > "$B/proc/$W/environ"
 	}
 	bu() {
-		B="$B" PATH="$bin:$PATH" GLASSINE_BRINGUP_SYS="$B/sys" GLASSINE_BRINGUP_DEV="$B/dev" \
+		B="$B" PATH="$bin:$PATH" GLASSINE_BRINGUP_SYS="$B/sys" GLASSINE_BRINGUP_DEV="$B/dev" GLASSINE_BRINGUP_BTADDR="$B/bt-address" \
 			GLASSINE_BRINGUP_PROC="$B/proc" GLASSINE_BRINGUP_RUN="$B/run" GLASSINE_BRINGUP_PARTS="$B/parts" \
 			sh "$srcdir/onyx-noteair-bringup" "$@" >> "$B/log" 2>&1
 	}
@@ -307,6 +311,10 @@ _check_bringup() {
 	grep -q "^wpctl status /run/user/1000" "$B/calls" && grep -q "WirePlumber has the sound card" "$B/log" \
 		&& ! grep -q '^setsid' "$B/calls" && kill -0 "$W" || { echo "bringup: WirePlumber with the card restarted"; return 1; }
 	grep -q "up: done$" "$B/log" || { echo "bringup: no done line"; return 1; }
+	# the Bluetooth address: made once (random static: the top two bits set), then set
+	a=$(cat "$B/bt-address")
+	echo "$a" | grep -qx '[c-f][0-9a-f]\(:[0-9a-f][0-9a-f]\)\{5\}' && grep -q "^btmgmt --index 0 public-addr $a$" "$B/calls" \
+		&& grep -q "Bluetooth address $a" "$B/log" || { echo "bringup: the Bluetooth address ($a)"; grep btmgmt "$B/calls"; return 1; }
 	# up again: the copies and the running daemons are kept, WiFi is loaded again
 	cp "$B/parts/fsg" "$B/fsg.orig"; head -c 4096 /dev/urandom > "$B/parts/fsg"; : > "$B/calls"
 	bu up || { echo "bringup: up again failed"; cat "$B/log"; return 1; }
@@ -318,6 +326,12 @@ _check_bringup() {
 	[ "$(at 'ssd stop rmtfs')" = 1 ] && [ "$(grep -c '^ssd stop' "$B/calls")" = 3 ] && ! ls "$B"/run/*.pid >/dev/null 2>&1 \
 		|| { echo "bringup: down"; cat "$B/calls"; return 1; }
 
+	# the address is kept; bluetoothd powered the controller on first: set while off
+	a="c2$(printf ':%s' 11 22 33 44 55)"
+	_bt_tree; echo "$a" > "$B/bt-address"; : > "$B/btmgmt_rejects"; : > "$B/log"
+	bu up || { echo "bringup: up with a rejected address"; cat "$B/log"; return 1; }
+	grep -q "^btmgmt --index 0 power off$" "$B/calls" && grep -q "Bluetooth address $a" "$B/log" \
+		&& [ "$(cat "$B/bt-address")" = "$a" ] || { echo "bringup: the address after Rejected"; cat "$B/calls"; return 1; }
 	# a failed step is logged and the next ones still run
 	_bt_tree; echo ath10k_snoc > "$B/fail_modules"; : > "$B/log"
 	rc=0; bu up || rc=$?
@@ -398,6 +412,8 @@ package() {
 	install -Dm644 "$srcdir"/onyx-noteair-bringup.modprobe "$pkgdir"/etc/modprobe.d/onyx-noteair-bringup.conf
 	install -Dm644 "$srcdir"/glassine-session.confd "$pkgdir"/etc/conf.d/glassine-session
 	install -Dm644 "$srcdir"/hwclock.confd-shutdown "$pkgdir"/etc/conf.d/hwclock.shutdown
+	install -Dm644 "$srcdir"/networkmanager-wlan.conf \
+		"$pkgdir"/etc/NetworkManager/conf.d/50-onyx-noteair-wlan.conf
 	install -Dm755 "$srcdir"/glassine-clock.nm-dispatcher \
 		"$pkgdir"/etc/NetworkManager/dispatcher.d/50-glassine-clock
 	install -Dm644 "$srcdir"/splash.pgm "$pkgdir"/usr/share/glassine/splash.pgm
@@ -414,7 +430,8 @@ ebad1a3c0674d587a22c037b89d4cb2ce6d717ac96158cc84dd4c92e1076168ae3b7c05d9b1a8b31
 1f3f012fcfebda0093884eb3e7e6ecef835268f3b5a7646bf4690aa8970cefd4b7641fa64d36e86664ec31c098823acd22ed3ae6a453c0dce4ca0f08a66395af  glassine-session.confd
 5fa5ae86cbb297ce05fb06b34048d2c86796cc312a314eba1e24558b7d8f5ef0e7c119a29379e58b6d87cb8797776d58d75828d9d2dd163acb55857f7dbf5fb9  glassine-splash.initd
 493d2c66d4ceda682239b7396ab487a9d7f1eb4f44408659c5d3970540576644deca1ca75935121c9dd3de507e78dc5a4959db2f1aafc25c6374488d7b11d284  hwclock.confd-shutdown
-89f4ec9d0ad1c59eab2a51e548c96a9d0801b46c97aafc63cae88d4d85807caf7a79ce1b05dee64557a663ad11772bc807722a86e699e796ff4549e8e8b6b79c  onyx-noteair-bringup
+c3271bae55269785c03e7ed9c56359b9faf841efb75ef94bb68f3a01f083ee8bce1c3373e86a708818c5679961babb6267fa2d764a01ed300d6da03dbdd2981f  networkmanager-wlan.conf
+6e634e070e3d45664faad984dd1e650e85c3752ab59b8c7746a96a036c9a599aac983c05bb73a6cb26da5ef50b9dabe8cbf2daa0ed70d7ada2e91349267c6bf2  onyx-noteair-bringup
 298b9bbb6b54616485c96151e6aac2615b91319f77378dec85231969c1335df02e017c04acb5e7d3b58e3e3d32065919017e623f3dd90f29e74b16668c85193b  onyx-noteair-bringup.initd
 03b41e8e1e1094c8e65fa797893ba840cd51e879833781e55cb405a2c7c90e7a97e74955ae547695e13a10ea03543abc222f0bac16e8025c8f9bac4287e96d9f  onyx-noteair-bringup.modprobe
 c82a04ed6cf8391dbbdd81c0fc5c1b3a3aec1cb87f68d4afbcf70c03f1098d29115273e3f2f409be0d3282fb6ddaeedc0918859e0fa1a20bce88e721af8daca2  onyx-noteair-tune.initd

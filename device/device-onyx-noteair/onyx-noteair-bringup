@@ -26,6 +26,9 @@ PROC=${GLASSINE_BRINGUP_PROC:-/proc}
 RUN=${GLASSINE_BRINGUP_RUN:-/run/onyx-noteair-bringup}
 PARTS=${GLASSINE_BRINGUP_PARTS:-$DEV/disk/by-partlabel}
 EFS=$RUN/efs
+# the Bluetooth address: the WCN3990 has none, and without one hci0 stays unconfigured
+# (bluetoothd: no controller). Per device, made once, never in an image.
+BT_ADDR=${GLASSINE_BRINGUP_BTADDR:-/var/lib/glassine/bt-address}
 # the sound card's name (the device tree's model)
 CARD_MODEL="Onyx Note Air"
 # the breaker: this many modem crashes within WINDOW seconds unload WiFi
@@ -165,7 +168,46 @@ step_wifi() {
 
 step_bluetooth() {
 	mods hci_uart || return 1
-	wait_for 15 "hci0" hci_present && log "hci0 present"
+	wait_for 15 "hci0" hci_present && log "hci0 present" || return 1
+	bt_address
+}
+
+# a random static address (the top two bits set), made once
+bt_address_make() {
+	local b
+	b=$(od -An -tx1 -N6 /dev/urandom | tr -d ' \n') || return 1
+	[ ${#b} = 12 ] || return 1
+	printf '%02x' $(( 0x${b%??????????} | 0xc0 ))
+	echo "${b#??}" | sed 's/../:&/g'
+}
+
+bt_address() {
+	local a out ok= i=0
+	a=$(tr 'A-F' 'a-f' < "$BT_ADDR" 2>/dev/null | grep -xm1 '[0-9a-f][0-9a-f]\(:[0-9a-f][0-9a-f]\)\{5\}')
+	if [ -z "$a" ]; then
+		a=$(bt_address_make) && mkdir -p "${BT_ADDR%/*}" && echo "$a" > "$BT_ADDR.new" && mv "$BT_ADDR.new" "$BT_ADDR" \
+			|| { log "the Bluetooth address: can't make one"; return 1; }
+		log "the Bluetooth address: made $a"
+	fi
+	command -v btmgmt >/dev/null || { log "the Bluetooth address: no btmgmt"; return 1; }
+	# right after the chip's setup the management index isn't ready (status 0x11):
+	# retry. btmgmt with stdin on /dev/null quits before the controller answers,
+	# so it gets a pipe; a timeout, since one call can hang.
+	bm() { echo | timeout 5 btmgmt --index 0 "$@" 2>&1; }
+	while [ $i -lt 15 ]; do
+		out=$(bm public-addr "$a")
+		case $out in
+		*"Set Public Address complete"*) ok=1; break ;;
+		*Rejected*)     # bluetoothd powered it on first: set it while off
+			bm power off >/dev/null
+			bm public-addr "$a" | grep -q "Set Public Address complete" && ok=1
+			bm power on >/dev/null
+			[ -n "$ok" ] && break ;;
+		esac
+		sleep 1; i=$((i + 1))
+	done
+	[ -n "$ok" ] || { log "the Bluetooth address: btmgmt public-addr failed"; return 1; }
+	log "Bluetooth address $a"
 }
 
 # the sound card's index in /proc/asound/cards ("NN [id]: driver - MODEL")

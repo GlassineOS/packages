@@ -57,6 +57,7 @@ makedepends="
 	cairo-dev
 	glassine-ui-dev
 	glib-dev
+	gtk+3.0-dev
 	json-c-dev
 	libxkbcommon-dev
 	librsvg-dev

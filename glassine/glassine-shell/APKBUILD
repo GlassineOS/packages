@@ -1,6 +1,6 @@
 # Maintainer: Moritz Meißelbach <moritz@glassine.org>
 # The e-ink desktop around the apps, from GlassineOS/shell: the bar and its views
-# (glassine-shell-wl), the window model (glassine-swayd), the settings app, the
+# (glassine-shell), the window model (glassine-swayd), the settings app, the
 # first-run setup, the sway session with its services and root helpers, the
 # background-app manager (glassine-bgprio, glassine-zpark), the zram swap service
 # (glassine-zram), the GTK themes and the glassine-mono icons. The voices and the drawing
@@ -12,12 +12,12 @@
 # btrfs-progs (glassine-zram's compressed spill; a plain file without it).
 # The glassine-zram service isn't enabled here: an image adds it to a runlevel.
 pkgname=glassine-shell
-pkgver=0_git20261107
+pkgver=0_git20261112
 # GlassineOS/shell main
-_commit=eba4246585c9ba56598337863a96c84b38e9ba08
+_commit=73166dbe4682fd78ef4770b274ef9ba21145d6b2
 # google/fonts, as in the shell's fonts/fetch-fonts.sh
 _gf=https://raw.githubusercontent.com/google/fonts/0b58fb370093f9a9f4ff785d94405710b79de67c/ofl
-pkgrel=2
+pkgrel=0
 pkgdesc="GlassineOS e-ink desktop: shell, window model, settings, sway session"
 url="https://github.com/GlassineOS/shell"
 arch="all"
@@ -96,7 +96,7 @@ check() {
 package() {
 	mkdir -p "$pkgdir"
 	cp -a rootfs/. "$pkgdir"/
-	install -Dm755 glassine-shell-wl glassine-swayd -t "$pkgdir"/usr/bin/
+	install -Dm755 glassine-shell glassine-swayd -t "$pkgdir"/usr/bin/
 	install -Dm755 glassine-bgprio glassine-zpark -t "$pkgdir"/usr/sbin/
 	chmod 0644 "$pkgdir"/etc/doas.d/glassine.conf
 	install -Dm644 rootfs/usr/share/icons/glassine-mono/LICENSE \
@@ -112,7 +112,7 @@ fonts() {
 }
 
 sha512sums="
-97306959720b0590977e575bf380f75079f3de1ea430c55fe9360c95f606618270675eb55325c3bbcd56ad28600c456a10f349dc5b06fce2612cf68a330b68c1  shell-eba4246585c9ba56598337863a96c84b38e9ba08.tar.gz
+c642cc0157b2359aabab74515faadfa12cf1a34473ad3e5b566778472801e6aa44de61345fa39f087cd322d0db5ea4067fb5f36e82b481f7e88ee4dfd34f1049  shell-73166dbe4682fd78ef4770b274ef9ba21145d6b2.tar.gz
 f6227ae0b96a951e5282babc44864893e92d12f6dcfe8c8bd7b548ca0f239bc71fc88ad17ddb5de45fc36a38896e1dbe1075a3260562a13db733a18e820f1442  IBMPlexSans-VF.ttf
 cea00ba67a618a50f318ed0baa07085e1dffe1ab90875ed7b5295d81040a62b6d71f08b1c416d78c0ebff324676c778855ac90d595082a8eb222dc7afb31d552  IBMPlexMono-Regular.ttf
 8bc228f89d2045902e2dc71387a6bef978d6b1f27467c5419f0d405803d5037f0c157ec2dd40d95bcc5b93d9f17e59c0c00701f88a1ffb18a9050d2564cf19a2  IBMPlexMono-Medium.ttf

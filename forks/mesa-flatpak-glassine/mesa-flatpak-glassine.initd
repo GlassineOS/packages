@@ -18,7 +18,8 @@ depend() {
 }
 
 start() {
-	if [ -e /run/glassine/booted ] && ! mountpoint -q /var/lib/flatpak; then
+	# the boot's report of the binds (GlassineOS/boot, gr_storage): flatpak=bound
+	if [ -e /run/glassine/storage ] && ! grep -qx flatpak=bound /run/glassine/storage; then
 		einfo "Flatpak's data isn't on userdata this boot: GL extension not installed"
 		return 0
 	fi

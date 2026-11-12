@@ -1,0 +1,7 @@
+# hwclock's configuration in the shutdown runlevel (OpenRC reads conf.d/NAME.RUNLEVEL
+# in place of conf.d/NAME). This device's RTC belongs to the secure world and
+# Linux can't set it, so writing the system time to it at shutdown always fails;
+# glassine-clock saves an offset instead.
+clock="UTC"
+clock_systohc="NO"
+clock_args=""

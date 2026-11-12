@@ -10,9 +10,9 @@
 # mode (glassine-devmode: USB networking and SSH with glassine.devmode=usb, boot's
 # README). The image links the seed into sysinit and developer mode into default.
 pkgname=glassine-deploy
-pkgver=0.4.3
+pkgver=0.4.4
 # GlassineOS/boot main
-_commit=03e4e65909f2cca2b9696b5b8b7a1cd6ca6d8cd8
+_commit=ac737f152a489f58765808902090b202c42eab30
 pkgrel=0
 pkgdesc="GlassineOS deployments: read-only bases, tried updates, reset, hibernation"
 url="https://github.com/GlassineOS/boot"
@@ -53,5 +53,5 @@ package() {
 	install -d "$pkgdir"/etc/glassine-bootimg/health.d "$pkgdir"/etc/glassine/hibernate.d
 }
 sha512sums="
-d68d01d32fe8d9fd93bfd755ea61ca0fba7d63c78e8deb909add2c469fad95898a4541b372065763fca1bcae36076adf337e411aa97d0abae59724b2e28915f6  boot-03e4e65909f2cca2b9696b5b8b7a1cd6ca6d8cd8.tar.gz
+0b9dfde019ed33ca9c0fbad53ca55fea27de4223162c5cf8582d476ab1210d04e34d58ecbac00c13b51f79ac7c5a25d025922b46b6c9f718c90389ffdaeb9deb  boot-ac737f152a489f58765808902090b202c42eab30.tar.gz
 "

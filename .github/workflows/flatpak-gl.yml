@@ -6,6 +6,8 @@
 name: flatpak-gl
 on:
   push:
+    # main only: a branch with a pull request is built by that
+    branches: [main]
     paths:
       - flatpak/org.freedesktop.Platform.GL.glassine/**
       - forks/mesa/APKBUILD

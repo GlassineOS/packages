@@ -67,7 +67,11 @@ modules:
       - -Dexpat=enabled
     sources:
       - type: archive
-        url: https://mesa.freedesktop.org/archive/mesa-@MESA_VERSION@.tar.xz
+        # the same file as forks/mesa's source; mesa.freedesktop.org resets connections
+        # from CI runners
+        url: https://archive.mesa3d.org/mesa-@MESA_VERSION@.tar.xz
+        mirror-urls:
+          - https://mesa.freedesktop.org/archive/mesa-@MESA_VERSION@.tar.xz
         sha512: @MESA_SHA512@
 @PATCHES@
       # libgallium-<version>-glassine.so: GL.default can ship the same Mesa version, so

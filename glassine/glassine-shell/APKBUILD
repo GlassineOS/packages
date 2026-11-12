@@ -17,12 +17,13 @@ pkgver=0_git20261107
 _commit=eba4246585c9ba56598337863a96c84b38e9ba08
 # google/fonts, as in the shell's fonts/fetch-fonts.sh
 _gf=https://raw.githubusercontent.com/google/fonts/0b58fb370093f9a9f4ff785d94405710b79de67c/ofl
-pkgrel=1
+pkgrel=2
 pkgdesc="GlassineOS e-ink desktop: shell, window model, settings, sway session"
 url="https://github.com/GlassineOS/shell"
 arch="all"
 license="GPL-2.0-or-later AND CC-BY-SA-4.0"
-# swaymsg comes from Alpine's sway; sway-glassine is the compositor the session runs
+# swaymsg comes from Alpine's sway; sway-glassine is the compositor the session runs;
+# glassine-reboot: the power menu's Recovery (glassine-power-root)
 depends="
 	$pkgname-fonts
 	at-spi2-core
@@ -32,6 +33,7 @@ depends="
 	doas
 	flock
 	glassine-epdd-desktop
+	glassine-reboot
 	glassine-ui
 	glib
 	gtk+3.0

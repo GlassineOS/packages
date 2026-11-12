@@ -44,5 +44,11 @@ package() {
 			"$pkgdir"/usr/share/mesa-flatpak-glassine/$b.commit
 	done
 }
-# sha512sums: run `abuild checksum` (or scripts/pin-source.sh on each bundle URL) once
-# the release gl-glassine-$pkgver-r$_mesarel-$_rel exists (the flatpak-gl workflow on main)
+sha512sums="
+a06f4d56fd6479ab2798ee47b8a5519b6a60998abd7e7270ecae81d471a44ec30bde84b9517f824976a7589fa343b91a029c3c50ddbb7acfd7152359e5635e7a  mesa-flatpak-glassine-sync
+b23839a1addb1fcb16a8e56b94afe7f1cf1c3690c9deeb31ede6132b8ef576b38f964b7681fb4d399916e7c1cc85fe6c7fc036c89750d9a27b0c62b42d63f397  mesa-flatpak-glassine.initd
+c769226cbdc016d3e03aa66e9ef980269229493a28730b0d1b39075300b1abd43022411a06601070b106df5461754b7054551c6514bb67f3ceebc6763f16363e  org.freedesktop.Platform.GL.glassine-25.08-aarch64-26.1.6-r200-1.flatpak
+2337abbc8ed17ae26ab52124a2f9828c4ce0102eb09c3caf07466ebdbba58728e195a7b5466a6c87adeb30dc2f3cadbd714ba8f021e2f5c13ebc1c867436f517  org.freedesktop.Platform.GL.glassine-25.08-aarch64-26.1.6-r200-1.commit
+20fbc228451b330f70741e56fbe6b44ded07c922d510330990cb72a1be809cdad8f0618c216ade85b9a3b0d9fe921d624c49cb97d31ba79d1e03baee3d5d9a81  org.freedesktop.Platform.GL.glassine-26.08-aarch64-26.1.6-r200-1.flatpak
+f455ef1a7a5d11a748c3845999c8d5e2a5f05e2326ef123d846038370e49d8d6d733d9bab251bfc439246b20ac5ffcb23b9586836fac4fc8dc5d032123d104f4  org.freedesktop.Platform.GL.glassine-26.08-aarch64-26.1.6-r200-1.commit
+"

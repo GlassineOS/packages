@@ -5,15 +5,17 @@
 # for the power menu), which go with the tools that read them.
 # device-data.list names the device's own files (waveform, firmware) for the seed of
 # GlassineOS/boot (in glassine-deploy: the seed service and the initramfs read it).
+# glassine-powerd: the sleep policy (power key, cover, idle; sticky sleep with WiFi
+# and Bluetooth off) and the front light, also the managed one (power.conf).
 # onyx-noteair-bringup brings up the modem, ADSP, WiFi, Bluetooth and the sound card
 # (with its modprobe.d file and the speaker and microphone routing).
 pkgname=device-onyx-noteair
 pkgver=4
-pkgrel=1
+pkgrel=2
 builddir="$srcdir"
 pkgdesc="Onyx Boox Note Air: system services, device data list, modem, radios and sound"
 url="https://github.com/GlassineOS/packages"
-arch="noarch"
+arch="aarch64"
 license="GPL-2.0-or-later"
 # glassine-deploy 0.4.0: the seed service that reads device-data.list (this package
 # shipped its own seed tool before)
@@ -29,6 +31,8 @@ source="device-data.list
 	glassine-clock.initd
 	glassine-clock.nm-dispatcher
 	glassine-ddr
+	glassine-powerd.c
+	glassine-powerd.initd
 	glassine-session.confd
 	glassine-splash.initd
 	hwclock.confd-shutdown
@@ -40,7 +44,10 @@ source="device-data.list
 	waveform.health
 	"
 
+makedepends="linux-headers"
+
 build() {
+	${CC:-gcc} $CFLAGS -Wall -Wextra -Werror -o "$srcdir"/glassine-powerd "$srcdir"/glassine-powerd.c $LDFLAGS -lm
 	# the splash: a white page at the panel's size (portrait, 8-bit grey)
 	{ printf 'P5\n1404 1872\n255\n'; head -c $((1404 * 1872)) /dev/zero | tr '\0' '\377'; } > "$srcdir"/splash.pgm
 }
@@ -48,7 +55,7 @@ build() {
 check() {
 	local f t rc
 	for f in glassine-clock glassine-clock.initd glassine-clock.nm-dispatcher glassine-ddr \
-		glassine-session.confd \
+		glassine-powerd.initd glassine-session.confd \
 		glassine-splash.initd onyx-noteair-bringup onyx-noteair-bringup.initd \
 		onyx-noteair-tune.initd waveform.health; do
 		sh -n "$srcdir/$f" || return 1
@@ -88,6 +95,7 @@ check() {
 	[ $rc = 1 ] || { echo "ddr: no voter is not an error"; return 1; }
 	[ "$(cat "$t/cg/cpu.uclamp.min")" = 0 ] || { echo "ddr: no voter, no floor"; return 1; }
 
+	_check_powerd "$t" || return 1
 	_check_list "$srcdir/device-data.list" || return 1
 	_check_health "$t/health" || return 1
 	_check_bringup "$t/bringup"
@@ -119,6 +127,28 @@ _check_clock_service() {
 	# hwclock in the shutdown runlevel doesn't write the RTC
 	out=$(. "$srcdir/hwclock.confd-shutdown"; echo "$clock_systohc")
 	[ "$out" = NO ] || { echo "hwclock: writes the RTC at shutdown"; return 1; }
+}
+
+# glassine-powerd's view of a config (-p: nothing written, nothing switched)
+_check_powerd() {
+	local t="$1" out
+	printf 'light_br=14\nlight_ct=12\n' > "$t/power.conf"
+	out=$(GLASSINE_POWER_CONF="$t/power.conf" "$srcdir"/glassine-powerd -p 2>/dev/null | grep '^light' | head -1)
+	[ "$out" = "light 32 32" ] || { echo "powerd: light 14/12 is '$out'"; return 1; }
+	printf 'light_br=28\nlight_ct=24\n' > "$t/power.conf"
+	out=$(GLASSINE_POWER_CONF="$t/power.conf" "$srcdir"/glassine-powerd -p 2>/dev/null | grep '^light' | head -1)
+	[ "$out" = "light 255 0" ] || { echo "powerd: full and warm is '$out'"; return 1; }
+	: > "$t/power.conf"
+	out=$(GLASSINE_POWER_CONF="$t/power.conf" "$srcdir"/glassine-powerd -p 2>/dev/null | grep '^light')
+	[ -z "$out" ] || { echo "powerd: no light_br changes the light: '$out'"; return 1; }
+	printf 'light_managed=1\n' > "$t/power.conf"
+	out=$(GLASSINE_POWER_CONF="$t/power.conf" "$srcdir"/glassine-powerd -p 2>/dev/null)
+	echo "$out" | grep -q '^light [0-9]* [0-9]*$' && echo "$out" | grep -q '^b=[0-9]*$' && echo "$out" | grep -q '^sunrise=' \
+		|| { echo "powerd: managed: $out"; return 1; }
+	# a managed light never goes dark: limits 0 and the lowest offset still light the panel
+	printf 'light_managed=1\nlight_b_min=0\nlight_b_max=0\nlight_b_off=-50\n' > "$t/power.conf"
+	out=$(GLASSINE_POWER_CONF="$t/power.conf" "$srcdir"/glassine-powerd -p 2>/dev/null | grep '^light' | head -1)
+	[ -n "$out" ] && [ "$out" != "light 0 0" ] || { echo "powerd: a managed light went dark: '$out'"; return 1; }
 }
 
 # device-data.list in the format of GlassineOS/boot docs/kernel-artifacts.md: format=1
@@ -354,6 +384,8 @@ _check_bringup() {
 package() {
 	install -Dm755 "$srcdir"/glassine-clock "$pkgdir"/usr/sbin/glassine-clock
 	install -Dm755 "$srcdir"/glassine-ddr "$pkgdir"/usr/sbin/glassine-ddr
+	install -Dm755 "$srcdir"/glassine-powerd "$pkgdir"/usr/sbin/glassine-powerd
+	install -Dm755 "$srcdir"/glassine-powerd.initd "$pkgdir"/etc/init.d/glassine-powerd
 	install -Dm644 "$srcdir"/device-data.list "$pkgdir"/usr/share/glassine/device-data.list
 	install -Dm644 "$srcdir"/epd.conf "$pkgdir"/etc/glassine/epd.conf
 	install -Dm644 "$srcdir"/slots.conf "$pkgdir"/etc/glassine/slots.conf
@@ -377,6 +409,8 @@ ce8889318d8f4d60eb097ae77eaf68f3e1b49a2eb6abad264567b2672761f4b0d1a0202dd81df568
 0ced78962b82861f687eca9f68411b79e7c9994579a669c11ca4814b109c0243d805a0510a5402efee82beda5556dca8a53bff7f9fcf2e7eb16c1f2619c2eaf2  glassine-clock.initd
 35fabd4c4f1f6d5bd28fd1a0b0502e8dc969502ecddfdbd792338ed812ef867f5b893ab7c3bc5d3d63bbffcc0d1b570f8f2b19ff3c9142fe12e2f244b649ab34  glassine-clock.nm-dispatcher
 5946fc2ce4e8311e5be331a9c9bd305942340436bb4c7864e101365f633342f0b56c7a26a0e6453cfeff46dfb3a0c99db0a0f6c40f541e1562a1ed44338ce3d5  glassine-ddr
+23e8cac7a4ce1ceaa8cf91c8a23f7424a684398d728d4f16ce3da2345c398576976b221c09045c1eed234f06a11d89a3cb2f0e79924dc61ac0a7e35f41fc6e1c  glassine-powerd.c
+ebad1a3c0674d587a22c037b89d4cb2ce6d717ac96158cc84dd4c92e1076168ae3b7c05d9b1a8b316f6b524322602ce8f0dc33b5daaa94e710cf33ff4eb7765a  glassine-powerd.initd
 1f3f012fcfebda0093884eb3e7e6ecef835268f3b5a7646bf4690aa8970cefd4b7641fa64d36e86664ec31c098823acd22ed3ae6a453c0dce4ca0f08a66395af  glassine-session.confd
 5fa5ae86cbb297ce05fb06b34048d2c86796cc312a314eba1e24558b7d8f5ef0e7c119a29379e58b6d87cb8797776d58d75828d9d2dd163acb55857f7dbf5fb9  glassine-splash.initd
 493d2c66d4ceda682239b7396ab487a9d7f1eb4f44408659c5d3970540576644deca1ca75935121c9dd3de507e78dc5a4959db2f1aafc25c6374488d7b11d284  hwclock.confd-shutdown

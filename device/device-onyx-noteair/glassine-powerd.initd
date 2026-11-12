@@ -1,0 +1,14 @@
+#!/sbin/openrc-run
+# The sleep policy (power key, cover, idle) and the front light: glassine-powerd.
+description="Sleep on the power key, the cover and idle; the front light"
+command=/usr/sbin/glassine-powerd
+supervisor=supervise-daemon
+output_log=/var/log/glassine-powerd.log
+error_log=/var/log/glassine-powerd.log
+respawn_delay=2
+respawn_max=0
+
+depend() {
+	need localmount
+	after networkmanager bluetooth
+}

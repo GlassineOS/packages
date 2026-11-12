@@ -1,12 +1,13 @@
 # Maintainer: Moritz Meißelbach <moritz@glassine.org>
 # glassine-reboot and glassine-reboot-clean from GlassineOS/boot: a reboot with a
 # reason (recovery, bootloader) for the bootloader to act on. glassine-reboot-clean
-# stops the services and makes the root read-only first (openrc shutdown), then
-# reboots with the reason; the desktop's "Recovery" entry uses it.
+# records the reason and hands the reboot to init: init stops the services and
+# makes the root read-only, and its last shutdown service (glassine-reboot-reason)
+# reboots with the reason. The desktop's "Recovery" entry uses it.
 pkgname=glassine-reboot
-pkgver=0.1.0
+pkgver=0.2.0
 # GlassineOS/boot main (as glassine-slot)
-_commit=4efb1290740fa9b7fbc30c4f264317c866dbb281
+_commit=a279eb60616a2e635e97a3445230c742b17e8916
 pkgrel=0
 pkgdesc="GlassineOS reboot with a reason (recovery, bootloader)"
 url="https://github.com/GlassineOS/boot"
@@ -25,7 +26,8 @@ build() {
 package() {
 	install -Dm755 glassine-reboot "$pkgdir"/usr/sbin/glassine-reboot
 	install -Dm755 sbin/glassine-reboot-clean "$pkgdir"/usr/sbin/glassine-reboot-clean
+	install -Dm755 openrc/glassine-reboot-reason "$pkgdir"/etc/init.d/glassine-reboot-reason
 }
 sha512sums="
-753faf34010fee0c2d27a3fca181cee10b03f291b2adfa0e6830391a1529c9f45ff6282cf8a5ac591de00befc6b73fb0a2c3c3938e989e622cbc9513ed1b04bf  boot-4efb1290740fa9b7fbc30c4f264317c866dbb281.tar.gz
+e64efcf45544cf037bc0a1c6e0f70bc8e477881295d57691385810e3ff173ed70fdddce8de570167a2d37eb3112dee3b7fb8d6f3c341119e4d20bd69f6261ae9  boot-a279eb60616a2e635e97a3445230c742b17e8916.tar.gz
 "

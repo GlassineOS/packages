@@ -1,8 +1,8 @@
 # The Flatpak GL extension org.freedesktop.Platform.GL.glassine (flatpak/): built and
 # checked on a native arm64 runner for each runtime branch apps use. Pull requests and
 # branches keep the bundles as an artifact; on main, a release
-# gl-glassine-<Mesa version>-<release> carries them (the source of the
-# mesa-flatpak-glassine package), once per release number.
+# gl-glassine-<Mesa version>-r<forks/mesa pkgrel>-<release> carries them (the source of the
+# mesa-flatpak-glassine package), once per tag.
 name: flatpak-gl
 on:
   push:
@@ -73,10 +73,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mesa=$(sed -n 's/^pkgver=//p' forks/mesa/APKBUILD)
+          mesarel=$(sed -n 's/^pkgrel=//p' forks/mesa/APKBUILD)
           rel=$(cat flatpak/org.freedesktop.Platform.GL.glassine/release)
-          tag=gl-glassine-$mesa-$rel
+          tag=gl-glassine-$mesa-r$mesarel-$rel
           if gh release view "$tag" >/dev/null 2>&1; then
-            echo "::notice::$tag exists; raise flatpak/org.freedesktop.Platform.GL.glassine/release for a new one"
+            echo "::notice::$tag exists; raise forks/mesa's pkgrel (a patch change) or flatpak/org.freedesktop.Platform.GL.glassine/release (a change here) for a new one"
             exit 0
           fi
           cd out

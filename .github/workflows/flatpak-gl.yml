@@ -60,7 +60,8 @@ jobs:
     needs: build
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && !github.event.repository.private
     runs-on: ubuntu-latest
-    environment: release
+    # its own environment: approval as for packages, without the signing key
+    environment: flatpak-release
     permissions:
       contents: write
     steps:

@@ -9,7 +9,7 @@
 # (with its modprobe.d file and the speaker and microphone routing).
 pkgname=device-onyx-noteair
 pkgver=4
-pkgrel=0
+pkgrel=1
 builddir="$srcdir"
 pkgdesc="Onyx Boox Note Air: system services, device data list, modem, radios and sound"
 url="https://github.com/GlassineOS/packages"
@@ -31,6 +31,7 @@ source="device-data.list
 	glassine-ddr
 	glassine-session.confd
 	glassine-splash.initd
+	hwclock.confd-shutdown
 	onyx-noteair-bringup
 	onyx-noteair-bringup.initd
 	onyx-noteair-bringup.modprobe
@@ -58,6 +59,7 @@ check() {
 	echo 1000 > "$t/rtc"
 	GLASSINE_CLOCK_RTC="$t/rtc" GLASSINE_CLOCK_OFFSET="$t/off" sh "$srcdir/glassine-clock" save
 	[ $(( $(date +%s) - 1000 - $(cat "$t/off") )) -le 2 ] || { echo "clock: offset $(cat "$t/off")"; return 1; }
+	_check_clock_service "$t" || return 1
 
 	# the power modes against stand-in sysfs files
 	for f in ddr_table ddr_min_kbps ddr_max_kbps; do : > "$t/p/$f"; done
@@ -89,6 +91,34 @@ check() {
 	_check_list "$srcdir/device-data.list" || return 1
 	_check_health "$t/health" || return 1
 	_check_bringup "$t/bringup"
+}
+
+# the clock service's start with OpenRC's functions stood in (date only records)
+_check_clock_service() {
+	local t="$1" out
+	out=$(
+		ebegin() { :; }; ewarn() { echo "warn $*"; }; eend() { echo "eend $1"; return $1; }
+		date() { echo "date $*" > "$t/date"; }
+		export GLASSINE_CLOCK_RTC="$t/rtc" GLASSINE_CLOCK_OFFSET="$t/none"
+		. "$srcdir/glassine-clock.initd"; start
+	)
+	case $out in "warn "*"eend 0") ;; *) echo "clock service: no offset is a failure: $out"; return 1 ;; esac
+	out=$(
+		ebegin() { :; }; ewarn() { echo "warn $*"; }; eend() { echo "eend $1"; return $1; }
+		date() { echo "date $*" > "$t/date"; }
+		export GLASSINE_CLOCK_RTC="$t/rtc" GLASSINE_CLOCK_OFFSET="$t/off"
+		echo 500 > "$t/off"; . "$srcdir/glassine-clock.initd"; start
+	)
+	[ "$out $(cat "$t/date")" = "eend 0 date -s @1500" ] || { echo "clock service: RTC + offset: $out"; return 1; }
+	out=$(
+		ebegin() { :; }; ewarn() { :; }; eend() { echo "eend $1"; return $1; }
+		export GLASSINE_CLOCK_RTC="$t/nortc" GLASSINE_CLOCK_OFFSET="$t/off"
+		. "$srcdir/glassine-clock.initd"; start
+	)
+	case $out in "eend 1") ;; *) echo "clock service: no RTC passes: $out"; return 1 ;; esac
+	# hwclock in the shutdown runlevel doesn't write the RTC
+	out=$(. "$srcdir/hwclock.confd-shutdown"; echo "$clock_systohc")
+	[ "$out" = NO ] || { echo "hwclock: writes the RTC at shutdown"; return 1; }
 }
 
 # device-data.list in the format of GlassineOS/boot docs/kernel-artifacts.md: format=1
@@ -335,6 +365,7 @@ package() {
 	install -Dm755 "$srcdir"/onyx-noteair-bringup.initd "$pkgdir"/etc/init.d/onyx-noteair-bringup
 	install -Dm644 "$srcdir"/onyx-noteair-bringup.modprobe "$pkgdir"/etc/modprobe.d/onyx-noteair-bringup.conf
 	install -Dm644 "$srcdir"/glassine-session.confd "$pkgdir"/etc/conf.d/glassine-session
+	install -Dm644 "$srcdir"/hwclock.confd-shutdown "$pkgdir"/etc/conf.d/hwclock.shutdown
 	install -Dm755 "$srcdir"/glassine-clock.nm-dispatcher \
 		"$pkgdir"/etc/NetworkManager/dispatcher.d/50-glassine-clock
 	install -Dm644 "$srcdir"/splash.pgm "$pkgdir"/usr/share/glassine/splash.pgm
@@ -343,11 +374,12 @@ sha512sums="
 ba43ff2d8df9d0e09ab1c0785df2072c901fb43d643b7da816569c7e2b8cac02e5ef8d8e1c0cceb4f4de58241c1b6e6710fdd56b94d8c67a4523470636a6f06b  device-data.list
 ce8889318d8f4d60eb097ae77eaf68f3e1b49a2eb6abad264567b2672761f4b0d1a0202dd81df56891fba3084883cada6980d5594ea0a332622cb5d445a34cb0  epd.conf
 9706b48fca84aa8f0714f30994c648264612bdd078a21a51c9dbd5195445e2f3654068532c07818e9606e881c31a9820000a8dce7085dc00e9e69af1ef85abc1  glassine-clock
-25a60f5ab6c9a5592d33a107fc2a33c8eefc8601e9aa22ca965801cf1ec6db3e6152472591e8dd36460edec119466908c717c8195ecb34c44188f8ef69bca859  glassine-clock.initd
+0ced78962b82861f687eca9f68411b79e7c9994579a669c11ca4814b109c0243d805a0510a5402efee82beda5556dca8a53bff7f9fcf2e7eb16c1f2619c2eaf2  glassine-clock.initd
 35fabd4c4f1f6d5bd28fd1a0b0502e8dc969502ecddfdbd792338ed812ef867f5b893ab7c3bc5d3d63bbffcc0d1b570f8f2b19ff3c9142fe12e2f244b649ab34  glassine-clock.nm-dispatcher
 5946fc2ce4e8311e5be331a9c9bd305942340436bb4c7864e101365f633342f0b56c7a26a0e6453cfeff46dfb3a0c99db0a0f6c40f541e1562a1ed44338ce3d5  glassine-ddr
 1f3f012fcfebda0093884eb3e7e6ecef835268f3b5a7646bf4690aa8970cefd4b7641fa64d36e86664ec31c098823acd22ed3ae6a453c0dce4ca0f08a66395af  glassine-session.confd
 5fa5ae86cbb297ce05fb06b34048d2c86796cc312a314eba1e24558b7d8f5ef0e7c119a29379e58b6d87cb8797776d58d75828d9d2dd163acb55857f7dbf5fb9  glassine-splash.initd
+493d2c66d4ceda682239b7396ab487a9d7f1eb4f44408659c5d3970540576644deca1ca75935121c9dd3de507e78dc5a4959db2f1aafc25c6374488d7b11d284  hwclock.confd-shutdown
 89f4ec9d0ad1c59eab2a51e548c96a9d0801b46c97aafc63cae88d4d85807caf7a79ce1b05dee64557a663ad11772bc807722a86e699e796ff4549e8e8b6b79c  onyx-noteair-bringup
 298b9bbb6b54616485c96151e6aac2615b91319f77378dec85231969c1335df02e017c04acb5e7d3b58e3e3d32065919017e623f3dd90f29e74b16668c85193b  onyx-noteair-bringup.initd
 03b41e8e1e1094c8e65fa797893ba840cd51e879833781e55cb405a2c7c90e7a97e74955ae547695e13a10ea03543abc222f0bac16e8025c8f9bac4287e96d9f  onyx-noteair-bringup.modprobe

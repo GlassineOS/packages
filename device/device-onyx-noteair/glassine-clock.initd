@@ -2,8 +2,8 @@
 # The system clock from the read-only RTC plus the offset glassine-clock saved
 # (at shutdown and after every NTP sync).
 description="System clock from the read-only RTC and a saved offset"
-F=/var/lib/glassine/clock-offset
-RTC=/sys/class/rtc/rtc0/since_epoch
+F=${GLASSINE_CLOCK_OFFSET:-/var/lib/glassine/clock-offset}
+RTC=${GLASSINE_CLOCK_RTC:-/sys/class/rtc/rtc0/since_epoch}
 
 depend() {
 	need localmount
@@ -13,7 +13,18 @@ depend() {
 
 start() {
 	ebegin "Restoring the clock"
-	[ -r $F ] && [ -r $RTC ] && date -s "@$(( $(cat $RTC) + $(cat $F) ))" >/dev/null
+	if [ ! -r $RTC ]; then
+		eend 1 "No RTC at $RTC"
+		return
+	fi
+	# No offset yet (a new device, or one reset): the RTC's time until the
+	# first network time sync saves one. Nothing has failed.
+	if [ ! -s $F ]; then
+		ewarn "No saved clock offset: the time is wrong until the first network time sync"
+		eend 0
+		return
+	fi
+	date -s "@$(( $(cat $RTC) + $(cat $F) ))" >/dev/null
 	eend $?
 }
 

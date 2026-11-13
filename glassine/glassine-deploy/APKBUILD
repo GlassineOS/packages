@@ -10,9 +10,9 @@
 # mode (glassine-devmode: USB networking and SSH with glassine.devmode=usb, boot's
 # README). The image links the seed into sysinit and developer mode into default.
 pkgname=glassine-deploy
-pkgver=0.4.4
+pkgver=0.4.5
 # GlassineOS/boot main
-_commit=ac737f152a489f58765808902090b202c42eab30
+_commit=ad7f4b8bf7a7ffd30dfaa40768f503fca35a8584
 pkgrel=0
 pkgdesc="GlassineOS deployments: read-only bases, tried updates, reset, hibernation"
 url="https://github.com/GlassineOS/boot"
@@ -47,11 +47,12 @@ package() {
 		install -Dm644 lib/$f "$pkgdir"/usr/lib/glassine-boot/$f
 	done
 	install -Dm644 conf/deploy.conf.example "$pkgdir"/usr/share/glassine-boot/deploy.conf.example
+	install -Dm644 conf/migrate.d/glassine-deploy.list "$pkgdir"/usr/share/glassine/migrate.d/glassine-deploy.list
 	install -Dm644 docs/deployments.md "$pkgdir"/usr/share/doc/$pkgname/deployments.md
 	install -Dm644 docs/kernel-artifacts.md "$pkgdir"/usr/share/doc/$pkgname/kernel-artifacts.md
 	# the accept step runs the same health checks as a kernel test boot (ACCEPT_HEALTH_DIR)
 	install -d "$pkgdir"/etc/glassine-bootimg/health.d "$pkgdir"/etc/glassine/hibernate.d
 }
 sha512sums="
-0b9dfde019ed33ca9c0fbad53ca55fea27de4223162c5cf8582d476ab1210d04e34d58ecbac00c13b51f79ac7c5a25d025922b46b6c9f718c90389ffdaeb9deb  boot-ac737f152a489f58765808902090b202c42eab30.tar.gz
+36f1e967c71295b09857ddb1bc80fa58c90e14c295e55ae8735cfbc02d47add343836eafb3049a22e01c4dbae70cf6682f571753fcd87eeba87c13619d7d57c2  boot-ad7f4b8bf7a7ffd30dfaa40768f503fca35a8584.tar.gz
 "

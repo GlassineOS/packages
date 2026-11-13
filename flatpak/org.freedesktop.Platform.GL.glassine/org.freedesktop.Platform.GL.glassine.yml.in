@@ -1,15 +1,19 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Flatpak GL extension org.freedesktop.Platform.GL.glassine: Mesa with the GlassineOS
-# freedreno patches, for Flatpak apps on an Adreno 5xx (freedreno), with softpipe as the
-# fallback. build.sh fills in the @...@ fields: the branch (the runtime's GL version,
-# e.g. 25.08), the architecture, Mesa's version and checksum from forks/mesa/APKBUILD,
-# and one patch source per forks/mesa/glassine-*.patch, in name order. So the extension
-# and the system Mesa always carry the same Mesa and the same patches.
+# freedreno patches, for Flatpak apps: freedreno for an Adreno 5xx, llvmpipe as the GL
+# fallback and lavapipe for Vulkan, with the libLLVM they need, so a device needs no
+# other GL extension for the branches it is built for. build.sh fills in the @...@
+# fields: the branch (the runtime's GL version, e.g. 25.08), the architecture, Mesa's
+# version and checksum from forks/mesa/APKBUILD, the Sdk's LLVM extension for the
+# branch, and one patch source per forks/mesa/glassine-*.patch, in name order. So the
+# extension and the system Mesa always carry the same Mesa and the same patches.
 id: org.freedesktop.Platform.GL.glassine
 branch: '@BRANCH@'
 runtime: org.freedesktop.Platform
 runtime-version: '@BRANCH@'
 sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.llvm@LLVM@
 build-extension: true
 separate-locales: false
 appstream-compose: false
@@ -22,6 +26,7 @@ cleanup:
   - /include
   - /lib/pkgconfig
   - /share/pkgconfig
+  - /share/vulkan
   - /pydeps
 modules:
   # Mesa's build needs PyYAML, which the Sdk lacks. Its pure Python half is enough;
@@ -39,15 +44,19 @@ modules:
   - name: mesa
     buildsystem: meson
     build-options:
+      # llvm-config and libLLVM of the Sdk's LLVM extension
+      prepend-path: /usr/lib/sdk/llvm@LLVM@/bin
+      prepend-ld-library-path: /usr/lib/sdk/llvm@LLVM@/lib
       env:
         PYTHONPATH: /usr/lib/@ARCH@-linux-gnu/GL/glassine/pydeps
     config-opts:
       - -Dbuildtype=release
       - -Db_ndebug=true
-      - -Dgallium-drivers=freedreno,softpipe
+      - -Dgallium-drivers=freedreno,llvmpipe
       - -Dfreedreno-kmds=msm
-      - -Dvulkan-drivers=
-      - -Dllvm=disabled
+      - -Dvulkan-drivers=swrast
+      - -Dllvm=enabled
+      - -Dshared-llvm=enabled
       - -Dplatforms=x11,wayland
       - -Dglx=dri
       - -Degl=enabled
@@ -90,3 +99,14 @@ modules:
         printf '{\n    "file_format_version" : "1.0.0",\n    "ICD" : {\n        "library_path" : "%s"\n    }\n}\n' \
           "${FLATPAK_DEST}/lib/libEGL_mesa.so.0" > ${FLATPAK_DEST}/glvnd/egl_vendor.d/50_mesa.json
       - cp ${FLATPAK_DEST}/glvnd/egl_vendor.d/50_mesa.json ${FLATPAK_DEST}/share/glvnd/egl_vendor.d/50_mesa.json
+      # The runtime's Vulkan loader reads the merged vulkan/icd.d at the extension root;
+      # Mesa installs lavapipe's ICD file (which names libvulkan_lvp.so by its full path)
+      # in share/vulkan/icd.d.
+      - install -Dm644 -t ${FLATPAK_DEST}/vulkan/icd.d ${FLATPAK_DEST}/share/vulkan/icd.d/lvp_icd.@ARCH@.json
+      # the libLLVM that libgallium and libvulkan_lvp link, from the Sdk's LLVM extension,
+      # which apps' runtimes don't carry
+      - |
+        for so in $(readelf -d ${FLATPAK_DEST}/lib/libgallium-*-glassine.so ${FLATPAK_DEST}/lib/libvulkan_lvp.so |
+          sed -n 's/.*(NEEDED).*\[\(libLLVM[^]]*\)\].*/\1/p' | sort -u); do
+          install -m755 /usr/lib/sdk/llvm@LLVM@/lib/$so ${FLATPAK_DEST}/lib/$so
+        done

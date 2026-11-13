@@ -67,19 +67,28 @@ Flatpak apps don't use the system Mesa: they take Mesa from a GL extension of th
 runtime, Flathub's `org.freedesktop.Platform.GL.default` unless told otherwise. Ours is
 `org.freedesktop.Platform.GL.glassine`, built by
 `flatpak/org.freedesktop.Platform.GL.glassine/build.sh BRANCH` from the same Mesa
-version and `glassine-*.patch` files as `forks/mesa` (freedreno, with softpipe as the
-fallback; no Vulkan). A session selects it with `FLATPAK_GL_DRIVERS=glassine:default`.
-It is built for each runtime branch apps use (`25.08`, `26.08`), since an extension
-only applies to a runtime with the same GL version.
+version and `glassine-*.patch` files as `forks/mesa`: freedreno, llvmpipe as the GL
+fallback and lavapipe for Vulkan, with the libLLVM they need from the Sdk's LLVM
+extension (`org.freedesktop.Sdk.Extension.llvm22`, the LLVM `forks/mesa` uses). A
+session selects it with `FLATPAK_GL_DRIVERS=glassine:default`. It is built for each
+runtime branch apps use (`25.08`, `26.08`), since an extension only applies to a
+runtime with the same GL version. For those branches it replaces GL.default: the
+`mesa-flatpak-glassine` package masks and removes GL.default's `BRANCH` and
+`BRANCH-extra` refs, and an app on any other runtime branch still gets GL.default.
 
 - Its `libgallium` is `libgallium-<version>-glassine.so`, so it never collides with
   GL.default's when both carry the same Mesa version.
 - Its `[ExtensionOf]` priority is 10: Flatpak orders GL extensions by priority, then by
   name, never by `FLATPAK_GL_DRIVERS`, and the first one supplies the merged EGL vendor
-  file and DRI drivers.
+  file, Vulkan ICD files and DRI drivers. The EGL vendor file and lavapipe's ICD file
+  name our libraries by their full paths.
 - `check.sh BRANCH` installs the bundle into an empty system installation, pins and
-  masks it, runs `uninstall --unused` and `update`, then checks inside a sandbox with
-  GL.default beside it that our EGL vendor file and DRI driver are the ones merged.
+  masks it, runs `uninstall --unused` and `update`; then, with GL.default masked,
+  installs the runtime and checks that GL.default stays out and that in a sandbox EGL
+  gives a GLES2 context from our Mesa and Vulkan lists lavapipe, with our libgallium,
+  libLLVM and libvulkan_lvp loaded (`probe.py`); then, with GL.default beside it, that
+  the merged EGL vendor file, ICD file and DRI driver are ours and the same libraries
+  load.
 
 The `flatpak-gl` workflow builds and checks both branches on an arm64 runner for pull
 requests and branches (artifact, 14 days). On `main` it creates the release

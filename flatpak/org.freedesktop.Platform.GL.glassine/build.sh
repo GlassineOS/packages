@@ -46,6 +46,12 @@ aarch64 | x86_64) ;;
 arm64) arch=aarch64 ;;
 *) echo "arch: aarch64 or x86_64, not $arch" >&2; exit 2 ;;
 esac
+# the Sdk's LLVM extension (org.freedesktop.Sdk.Extension.llvmNN) for llvmpipe and
+# lavapipe: the LLVM forks/mesa uses, where the branch has it
+case $branch in
+25.08 | 26.08) llvm=22 ;;
+*) echo "branch $branch: no LLVM version chosen (org.freedesktop.Sdk.Extension.llvmNN)" >&2; exit 2 ;;
+esac
 name=$id-$branch-$arch
 cache=/out/cache/$branch-$arch
 log=/out/$name.log
@@ -80,12 +86,12 @@ for p in /src/forks/mesa/glassine-*.patch; do
 done
 printf '%s' "$patches" > "$w/patches.yml"
 sed -e "s|@BRANCH@|$branch|g" -e "s|@ARCH@|$arch|g" -e "s|@MESA_VERSION@|$mesa|g" \
-	-e "s|@MESA_SHA512@|$sha512|g" "/src/flatpak/$id/$id.yml.in" |
+	-e "s|@MESA_SHA512@|$sha512|g" -e "s|@LLVM@|$llvm|g" "/src/flatpak/$id/$id.yml.in" |
 	awk -v pf="$w/patches.yml" '$0 == "@PATCHES@" { while ((getline l < pf) > 0) print l; next } { print }' \
 	> "$w/tree/$id.yml"
 ! grep -n '@[A-Z][A-Z0-9_]*@' "$w/tree/$id.yml" || { echo "unfilled fields in the manifest" >&2; exit 1; }
 
-echo "building $id//$branch ($arch): Mesa $mesa, $(ls "$w/tree/patches" | wc -l) patches"
+echo "building $id//$branch ($arch): Mesa $mesa, LLVM $llvm, $(ls "$w/tree/patches" | wc -l) patches"
 cd "$w"
 if ! flatpak-builder --arch="$arch" --system --install-deps-from=flathub --force-clean \
 	--disable-rofiles-fuse --state-dir="$w/state" "$w/build" "$w/tree/$id.yml" >"$log" 2>&1; then
@@ -113,8 +119,32 @@ done
 for j in glvnd/egl_vendor.d/50_mesa.json share/glvnd/egl_vendor.d/50_mesa.json; do
 	grep -q "\"$prefix/lib/libEGL_mesa.so.0\"" "$f/$j" || { echo "$j doesn't name $prefix/lib/libEGL_mesa.so.0" >&2; fail=1; }
 done
-ls "$f/lib/dri/" | grep -qx msm_dri.so || { echo "missing: lib/dri/msm_dri.so" >&2; fail=1; }
+for d in msm_dri.so swrast_dri.so; do
+	ls "$f/lib/dri/" | grep -qx $d || { echo "missing: lib/dri/$d" >&2; fail=1; }
+done
+# llvmpipe and lavapipe: the libLLVM they link ships here, and every library it needs is
+# the Platform's (the runtime apps run on)
+llvmso=$(readelf -d "$f/lib/$lib" | sed -n 's/.*(NEEDED).*\[\(libLLVM[^]]*\)\].*/\1/p')
+[ -n "$llvmso" ] || { echo "lib/$lib doesn't link a libLLVM" >&2; fail=1; }
+for so in lib/$lib lib/libvulkan_lvp.so; do
+	[ -n "$llvmso" ] && readelf -d "$f/$so" 2>/dev/null | grep -q "(NEEDED).*\[$llvmso\]" ||
+		{ echo "$so doesn't link ${llvmso:-libLLVM}" >&2; fail=1; }
+done
+platform=$(flatpak info --system -l "org.freedesktop.Platform//$branch")/files
+if [ -n "$llvmso" ] && [ -f "$f/lib/$llvmso" ]; then
+	for need in $(readelf -d "$f/lib/$llvmso" | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p'); do
+		[ -e "$platform/lib/$arch-linux-gnu/$need" ] || [ -e "$platform/lib/$need" ] ||
+			{ echo "lib/$llvmso needs $need, which the Platform lacks" >&2; fail=1; }
+	done
+else
+	echo "missing: lib/${llvmso:-libLLVM}" >&2
+	fail=1
+fi
+icd=vulkan/icd.d/lvp_icd.$arch.json
+grep -q "\"$prefix/lib/libvulkan_lvp.so\"" "$f/$icd" 2>/dev/null ||
+	{ echo "$icd doesn't name $prefix/lib/libvulkan_lvp.so" >&2; fail=1; }
 [ $fail = 0 ] || exit 1
+echo "installed size: $(du -sh "$f" | cut -f1) (of it $llvmso: $(du -h "$f/lib/$llvmso" | cut -f1))"
 cat "$md"
 
 ts=NOW

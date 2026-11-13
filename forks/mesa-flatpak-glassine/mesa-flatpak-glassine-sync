@@ -12,15 +12,24 @@
 #    branch (BRANCH and BRANCH-extra), so neither updates nor related refs bring it back,
 #    and uninstall those refs: ours carries llvmpipe and lavapipe as well, so GL.default
 #    only takes space. Branches without a bundle here keep GL.default.
-# The boot service runs this before the desktop session; run it by hand after a live
-# upgrade of this package to use the new bundles without a reboot (apps started after
-# it get them).
+# The boot service runs this with --keep-default before the desktop session, then once
+# more in the background for the uninstall: removing GL.default takes minutes, and the
+# session must not wait for it. Run it by hand after a live upgrade of this package to
+# use the new bundles without a reboot (apps started after it get them).
 #
-#   mesa-flatpak-glassine-sync     exit 0, or 1 if a branch failed (the log says which)
+#   mesa-flatpak-glassine-sync [--keep-default]
+#                    exit 0, or 1 if a branch failed (the log says which);
+#                    --keep-default masks GL.default but doesn't uninstall it
 #
 # FLATPAK_SYSTEM_DIR picks another installation (tests), MESA_FLATPAK_DIR another
 # bundle directory.
 set -u
+uninstall=1
+case ${1-} in
+--keep-default) uninstall= ;;
+'') ;;
+*) echo "usage: mesa-flatpak-glassine-sync [--keep-default]" >&2; exit 2 ;;
+esac
 id=org.freedesktop.Platform.GL.glassine
 default=org.freedesktop.Platform.GL.default
 dir=${MESA_FLATPAK_DIR:-/usr/share/mesa-flatpak-glassine}
@@ -48,6 +57,7 @@ for c in "$dir"/*.commit; do
 	[ "$(flatpak info --system -c "$ref" 2>/dev/null)" = "$want" ] || { rc=1; continue; }
 	for b in "$branch" "$branch-extra"; do
 		flatpak mask --system | sed "s/^ *//" | grep -qxF "$default//$b" || flatpak mask --system "$default//$b" || rc=1
+		[ -n "$uninstall" ] || continue
 		flatpak info --system "runtime/$default/$arch/$b" >/dev/null 2>&1 || continue
 		echo "$default//$b: uninstalling"
 		timeout 300 flatpak uninstall --system -y --noninteractive "runtime/$default/$arch/$b" || rc=1

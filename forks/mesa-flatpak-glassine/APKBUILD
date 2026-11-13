@@ -14,7 +14,7 @@ pkgver=26.1.6
 # the bundles' release: forks/mesa's pkgrel and flatpak/org.freedesktop.Platform.GL.glassine/release
 _mesarel=200
 _rel=2
-pkgrel=1
+pkgrel=2
 pkgdesc="Mesa with the GlassineOS freedreno patches for Flatpak apps"
 url="https://github.com/GlassineOS/packages"
 arch="aarch64"
@@ -47,8 +47,8 @@ package() {
 	done
 }
 sha512sums="
-4037a26ed81b9b3c78614ecced8307de867324c65b7c9a3a598d209b06c61877d1cd7ad7c9ccfaff6882c06e7b888efb4a03d4d762428c4375abdb74503a2b8f  mesa-flatpak-glassine-sync
-ef623221fcf296a84e63f573c7e5a1d0c00c1a7accc7e8d72b045a24a03dfcec3de9fa0cf6a17ed276e29dd5ea98d4bfd85dc728ac12c3119624bb890239c8c0  mesa-flatpak-glassine.initd
+cc5fe81fa17dc94d35cef4abe3a7a96113a7b4759602fe9fccf46e1fbf746fe1eb2316dc531217f4b5afe6bbe28f967c9edefd608fcd2dd787eeeb2019fe1e2f  mesa-flatpak-glassine-sync
+21f76231e4939223b336071c3b9410384d27388c9444e1a4ec634d5e832a6fbb9b7e93941437e7e7f5f2e08e459c786a5ce83537c35547370a6ff3d12ea0f8b3  mesa-flatpak-glassine.initd
 8b6e875e96fce2f872b5be67f808ccf3b5c325e1bf5906a0123d0832759d90b36ab8f4c09028150e236a94ce39826282f8584152bb49e610a626be029291177f  org.freedesktop.Platform.GL.glassine-25.08-aarch64-26.1.6-r200-2.flatpak
 c4d1498e9c5280257f10ea34967b2e812c67f39334868907527b6944ad07bae800f3ad9dbb9fe59a5e5bc8db8598806d66c7a7e0c8ad5bcedb97954b814635c8  org.freedesktop.Platform.GL.glassine-25.08-aarch64-26.1.6-r200-2.commit
 56d17f6edd886f3dc2a241f1ff65babb5d91d8bf73ae501a9aad02f177e4611f5b2dccbe4209bc207dc7359cdd12fed3575ed7760f8467422051268c376f0213  org.freedesktop.Platform.GL.glassine-26.08-aarch64-26.1.6-r200-2.flatpak

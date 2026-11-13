@@ -1,0 +1,7 @@
+# The Note Air's state that a switch (an update, a reset) carries into the next
+# deployment (GlassineOS/boot, docs/deployments.md, "Migrate lists")
+# the Bluetooth address onyx-noteair-bringup made once: bluez keeps the pairings
+# under it, a new one hides them
+/var/lib/glassine/bt-address
+# the real-time clock's offset (glassine-clock): the clock is right before the network
+/var/lib/glassine/clock-offset

@@ -7,7 +7,11 @@
 #  - pin it: no app refers to a GL extension by name, so "flatpak uninstall --unused"
 #    (the Flatpak update job, app stores) would remove it, and apps would fall back to
 #    Flathub's GL.default;
-#  - mask it: its origin is the bundle, which has no remote to update from.
+#  - mask it: its origin is the bundle, which has no remote to update from;
+#  - once it is installed at the bundle's commit, mask Flathub's GL.default for the same
+#    branch (BRANCH and BRANCH-extra), so neither updates nor related refs bring it back,
+#    and uninstall those refs: ours carries llvmpipe and lavapipe as well, so GL.default
+#    only takes space. Branches without a bundle here keep GL.default.
 # The boot service runs this before the desktop session; run it by hand after a live
 # upgrade of this package to use the new bundles without a reboot (apps started after
 # it get them).
@@ -18,6 +22,7 @@
 # bundle directory.
 set -u
 id=org.freedesktop.Platform.GL.glassine
+default=org.freedesktop.Platform.GL.default
 dir=${MESA_FLATPAK_DIR:-/usr/share/mesa-flatpak-glassine}
 arch=$(flatpak --default-arch 2>/dev/null) || { echo "flatpak isn't installed" >&2; exit 1; }
 rc=0
@@ -40,5 +45,12 @@ for c in "$dir"/*.commit; do
 	fi
 	flatpak pin --system | sed "s/^ *//" | grep -qxF "$ref" || flatpak pin --system "$ref" || rc=1
 	flatpak mask --system | sed "s/^ *//" | grep -qxF "$id//$branch" || flatpak mask --system "$id//$branch" || rc=1
+	[ "$(flatpak info --system -c "$ref" 2>/dev/null)" = "$want" ] || { rc=1; continue; }
+	for b in "$branch" "$branch-extra"; do
+		flatpak mask --system | sed "s/^ *//" | grep -qxF "$default//$b" || flatpak mask --system "$default//$b" || rc=1
+		flatpak info --system "runtime/$default/$arch/$b" >/dev/null 2>&1 || continue
+		echo "$default//$b: uninstalling"
+		timeout 300 flatpak uninstall --system -y --noninteractive "runtime/$default/$arch/$b" || rc=1
+	done
 done
 exit $rc

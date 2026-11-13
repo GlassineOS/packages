@@ -7,7 +7,8 @@
 # before any service starts, so the extension is installed once per userdata, not per
 # base. Without that bind (a bare boot, or a failed bind) nothing is installed: it would
 # land in the deployment's own directory, hidden again on the next boot with the bind.
-# Never fails the boot: apps then use Flathub's Mesa.
+# Never fails the boot. Before our extension is installed for a branch, GL.default is
+# neither masked nor removed for it, so its apps keep Flathub's Mesa.
 description="Install our Mesa for Flatpak apps (GL extension glassine)"
 LOG=/var/log/mesa-flatpak-glassine.log
 

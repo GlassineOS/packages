@@ -1,10 +1,13 @@
 # Maintainer: Moritz Meißelbach <moritz@glassine.org>
 # The Onyx Boox Note Air's system services and scripts. Its configuration files
 # (sysctl, sound routing) are in the device stage of GlassineOS/images, except the
-# panel adapter (/etc/glassine/epd.conf) and Android's slot (/etc/glassine/slots.conf,
-# for the power menu), which go with the tools that read them.
-# device-data.list names the device's own files (waveform, firmware) for the seed of
-# GlassineOS/boot (in glassine-deploy: the seed service and the initramfs read it).
+# panel adapter (/etc/glassine/epd.conf), which goes with the tools that read it.
+# The device's facts are in its description (GlassineOS/installer spec 002), installed at
+# /usr/share/glassine/device.toml; the files that state them are derived from it here at
+# the build, never written by hand (FR-030): device-data.list names the device's own
+# files (waveform, firmware) for the seed of GlassineOS/boot (in glassine-deploy: the
+# seed service and the initramfs read it), and slots.conf names Android's slot for the
+# power menu.
 # networkmanager-wlan.conf: a stable WiFi MAC (the chip gives the driver none).
 # migrate.list: the state an update carries (the Bluetooth address, the clock offset).
 # glassine-powerd: the sleep policy (power key, cover, idle; sticky sleep with WiFi
@@ -13,7 +16,7 @@
 # (with its modprobe.d file and the speaker and microphone routing).
 pkgname=device-onyx-noteair
 pkgver=4
-pkgrel=3
+pkgrel=4
 builddir="$srcdir"
 pkgdesc="Onyx Boox Note Air: system services, device data list, modem, radios and sound"
 url="https://github.com/GlassineOS/packages"
@@ -26,9 +29,12 @@ license="GPL-2.0-or-later"
 # tqftpserv (the modem's file systems and file server), qrtr-diag-sink (without it the
 # WLAN firmware takes the modem down), alsa-utils (amixer: the sound routing),
 # bluez-btmgmt (the Bluetooth address: the chip has none)
+# GlassineOS/installer: the description (devices/onyx-noteair.toml) and
+# glassine-device-files, which checks it as the installer does and derives the files
+_installer=9f578b8b27988b3043527658c3d719d75b10e36c
 depends="busybox glassine-deploy>=0.4.0 glassine-epdd glassine-slot
 	alsa-utils bluez-btmgmt qrtr qrtr-diag-sink rmtfs tqftpserv"
-source="device-data.list
+source="installer-$_installer.tar.gz::https://github.com/GlassineOS/installer/archive/$_installer.tar.gz
 	epd.conf
 	glassine-clock
 	glassine-clock.initd
@@ -45,13 +51,32 @@ source="device-data.list
 	onyx-noteair-bringup.initd
 	onyx-noteair-bringup.modprobe
 	onyx-noteair-tune.initd
-	slots.conf
 	waveform.health
 	"
 
-makedepends="linux-headers"
+# cargo: glassine-device-files (its crates are fetched in prepare)
+makedepends="cargo linux-headers"
+options="net"
+_inst="$srcdir/installer-$_installer"
+
+prepare() {
+	default_prepare
+	cd "$_inst"
+	cargo fetch --locked
+}
 
 build() {
+	# the derived files, never a hand-written copy next to this APKBUILD (FR-030)
+	local f
+	for f in device-data.list slots.conf; do
+		[ ! -e "$startdir/$f" ] || { echo "$f is derived from the description: remove $startdir/$f"; return 1; }
+	done
+	(cd "$_inst" && cargo build --frozen --release -p glassine-device-files)
+	rm -rf "$srcdir/derived"; mkdir "$srcdir/derived"
+	"$_inst"/target/release/glassine-device-files "$_inst"/devices/onyx-noteair.toml "$srcdir/derived"
+	for f in device-data.list slots.conf; do
+		[ -f "$srcdir/derived/$f" ] || { echo "the description derives no $f"; return 1; }
+	done
 	${CC:-gcc} $CFLAGS -Wall -Wextra -Werror -o "$srcdir"/glassine-powerd "$srcdir"/glassine-powerd.c $LDFLAGS -lm
 	# the splash: a white page at the panel's size (portrait, 8-bit grey)
 	{ printf 'P5\n1404 1872\n255\n'; head -c $((1404 * 1872)) /dev/zero | tr '\0' '\377'; } > "$srcdir"/splash.pgm
@@ -101,7 +126,8 @@ check() {
 	[ "$(cat "$t/cg/cpu.uclamp.min")" = 0 ] || { echo "ddr: no voter, no floor"; return 1; }
 
 	_check_powerd "$t" || return 1
-	_check_list "$srcdir/device-data.list" || return 1
+	_check_list "$srcdir/derived/device-data.list" || return 1
+	grep -qx 'ANDROID_SLOT=[ab]' "$srcdir/derived/slots.conf" || { echo "slots.conf: no ANDROID_SLOT"; return 1; }
 	# the migrate list: absolute paths only (glassine-deploy drops the others)
 	! grep -v -e '^#' -e '^$' "$srcdir"/migrate.list | grep -qv '^/' || { echo "migrate.list: not an absolute path"; return 1; }
 	_check_health "$t/health" || return 1
@@ -404,9 +430,10 @@ package() {
 	install -Dm755 "$srcdir"/glassine-ddr "$pkgdir"/usr/sbin/glassine-ddr
 	install -Dm755 "$srcdir"/glassine-powerd "$pkgdir"/usr/sbin/glassine-powerd
 	install -Dm755 "$srcdir"/glassine-powerd.initd "$pkgdir"/etc/init.d/glassine-powerd
-	install -Dm644 "$srcdir"/device-data.list "$pkgdir"/usr/share/glassine/device-data.list
+	install -Dm644 "$_inst"/devices/onyx-noteair.toml "$pkgdir"/usr/share/glassine/device.toml
+	install -Dm644 "$srcdir"/derived/device-data.list "$pkgdir"/usr/share/glassine/device-data.list
 	install -Dm644 "$srcdir"/epd.conf "$pkgdir"/etc/glassine/epd.conf
-	install -Dm644 "$srcdir"/slots.conf "$pkgdir"/etc/glassine/slots.conf
+	install -Dm644 "$srcdir"/derived/slots.conf "$pkgdir"/etc/glassine/slots.conf
 	install -Dm755 "$srcdir"/waveform.health "$pkgdir"/etc/glassine-bootimg/health.d/50-waveform
 	install -Dm755 "$srcdir"/glassine-clock.initd "$pkgdir"/etc/init.d/glassine-clock
 	install -Dm755 "$srcdir"/glassine-splash.initd "$pkgdir"/etc/init.d/glassine-splash
@@ -424,7 +451,7 @@ package() {
 	install -Dm644 "$srcdir"/migrate.list "$pkgdir"/usr/share/glassine/migrate.d/device-onyx-noteair.list
 }
 sha512sums="
-ba43ff2d8df9d0e09ab1c0785df2072c901fb43d643b7da816569c7e2b8cac02e5ef8d8e1c0cceb4f4de58241c1b6e6710fdd56b94d8c67a4523470636a6f06b  device-data.list
+4db956ffbf0602b6f3e28200393e4a2bbaefab4557eaed7745dc92753a11993e9a263ad58b81041c9fc7070c1a9cbe7f6db5d27dcc38fc51cb0ca66a0834b6c6  installer-9f578b8b27988b3043527658c3d719d75b10e36c.tar.gz
 ce8889318d8f4d60eb097ae77eaf68f3e1b49a2eb6abad264567b2672761f4b0d1a0202dd81df56891fba3084883cada6980d5594ea0a332622cb5d445a34cb0  epd.conf
 9706b48fca84aa8f0714f30994c648264612bdd078a21a51c9dbd5195445e2f3654068532c07818e9606e881c31a9820000a8dce7085dc00e9e69af1ef85abc1  glassine-clock
 0ced78962b82861f687eca9f68411b79e7c9994579a669c11ca4814b109c0243d805a0510a5402efee82beda5556dca8a53bff7f9fcf2e7eb16c1f2619c2eaf2  glassine-clock.initd
@@ -441,6 +468,5 @@ c3271bae55269785c03e7ed9c56359b9faf841efb75ef94bb68f3a01f083ee8bce1c3373e86a7088
 298b9bbb6b54616485c96151e6aac2615b91319f77378dec85231969c1335df02e017c04acb5e7d3b58e3e3d32065919017e623f3dd90f29e74b16668c85193b  onyx-noteair-bringup.initd
 03b41e8e1e1094c8e65fa797893ba840cd51e879833781e55cb405a2c7c90e7a97e74955ae547695e13a10ea03543abc222f0bac16e8025c8f9bac4287e96d9f  onyx-noteair-bringup.modprobe
 c82a04ed6cf8391dbbdd81c0fc5c1b3a3aec1cb87f68d4afbcf70c03f1098d29115273e3f2f409be0d3282fb6ddaeedc0918859e0fa1a20bce88e721af8daca2  onyx-noteair-tune.initd
-8f08c40570539754072a5b89e9c498a78f5b9307fda3a168cb0fa4961a7646946d3a066dbb163f6dc43f91e5d1a57f5e8a825218b5b0bb9bbbb8688cbfb6a2d7  slots.conf
 46dade4c54d7a4d91c26a658d0546a4a32583fa1e8cab12eab60b5bf6f710f6d6a2ef634c0b9dd95a087b1e86032bf7f4a56fcfd2a53a3f1759497ad63e6ba55  waveform.health
 "

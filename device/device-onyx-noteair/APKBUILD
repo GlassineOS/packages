@@ -6,13 +6,14 @@
 # device-data.list names the device's own files (waveform, firmware) for the seed of
 # GlassineOS/boot (in glassine-deploy: the seed service and the initramfs read it).
 # networkmanager-wlan.conf: a stable WiFi MAC (the chip gives the driver none).
+# migrate.list: the state an update carries (the Bluetooth address, the clock offset).
 # glassine-powerd: the sleep policy (power key, cover, idle; sticky sleep with WiFi
 # and Bluetooth off) and the front light, also the managed one (power.conf).
 # onyx-noteair-bringup brings up the modem, ADSP, WiFi, Bluetooth and the sound card
 # (with its modprobe.d file and the speaker and microphone routing).
 pkgname=device-onyx-noteair
 pkgver=4
-pkgrel=2
+pkgrel=3
 builddir="$srcdir"
 pkgdesc="Onyx Boox Note Air: system services, device data list, modem, radios and sound"
 url="https://github.com/GlassineOS/packages"
@@ -38,6 +39,7 @@ source="device-data.list
 	glassine-session.confd
 	glassine-splash.initd
 	hwclock.confd-shutdown
+	migrate.list
 	networkmanager-wlan.conf
 	onyx-noteair-bringup
 	onyx-noteair-bringup.initd
@@ -100,6 +102,8 @@ check() {
 
 	_check_powerd "$t" || return 1
 	_check_list "$srcdir/device-data.list" || return 1
+	# the migrate list: absolute paths only (glassine-deploy drops the others)
+	! grep -v -e '^#' -e '^$' "$srcdir"/migrate.list | grep -qv '^/' || { echo "migrate.list: not an absolute path"; return 1; }
 	_check_health "$t/health" || return 1
 	_check_bringup "$t/bringup"
 }
@@ -417,6 +421,7 @@ package() {
 	install -Dm755 "$srcdir"/glassine-clock.nm-dispatcher \
 		"$pkgdir"/etc/NetworkManager/dispatcher.d/50-glassine-clock
 	install -Dm644 "$srcdir"/splash.pgm "$pkgdir"/usr/share/glassine/splash.pgm
+	install -Dm644 "$srcdir"/migrate.list "$pkgdir"/usr/share/glassine/migrate.d/device-onyx-noteair.list
 }
 sha512sums="
 ba43ff2d8df9d0e09ab1c0785df2072c901fb43d643b7da816569c7e2b8cac02e5ef8d8e1c0cceb4f4de58241c1b6e6710fdd56b94d8c67a4523470636a6f06b  device-data.list
@@ -430,6 +435,7 @@ ebad1a3c0674d587a22c037b89d4cb2ce6d717ac96158cc84dd4c92e1076168ae3b7c05d9b1a8b31
 1f3f012fcfebda0093884eb3e7e6ecef835268f3b5a7646bf4690aa8970cefd4b7641fa64d36e86664ec31c098823acd22ed3ae6a453c0dce4ca0f08a66395af  glassine-session.confd
 5fa5ae86cbb297ce05fb06b34048d2c86796cc312a314eba1e24558b7d8f5ef0e7c119a29379e58b6d87cb8797776d58d75828d9d2dd163acb55857f7dbf5fb9  glassine-splash.initd
 493d2c66d4ceda682239b7396ab487a9d7f1eb4f44408659c5d3970540576644deca1ca75935121c9dd3de507e78dc5a4959db2f1aafc25c6374488d7b11d284  hwclock.confd-shutdown
+270fdb37c3d50e4dc43810d9a04281acf986af67792a65fb015094101c409da390f2eb71e882392bb377aad04106d60fecbed85bd98efa91705f3b1d52d0e9e1  migrate.list
 c3271bae55269785c03e7ed9c56359b9faf841efb75ef94bb68f3a01f083ee8bce1c3373e86a708818c5679961babb6267fa2d764a01ed300d6da03dbdd2981f  networkmanager-wlan.conf
 6e634e070e3d45664faad984dd1e650e85c3752ab59b8c7746a96a036c9a599aac983c05bb73a6cb26da5ef50b9dabe8cbf2daa0ed70d7ada2e91349267c6bf2  onyx-noteair-bringup
 298b9bbb6b54616485c96151e6aac2615b91319f77378dec85231969c1335df02e017c04acb5e7d3b58e3e3d32065919017e623f3dd90f29e74b16668c85193b  onyx-noteair-bringup.initd

@@ -1,0 +1,69 @@
+# Maintainer: Moritz Meißelbach <moritz@glassine.org>
+# Base models of glassine-predict, the on-screen keyboard's word predictor (GlassineOS/shell
+# docs/predictor.md): word counts built from the pinned sources in the shell's
+# tools/predict-model/LANG.sources, one subpackage per language. The builder and the
+# extraction come from the same shell commit; the same sources give the same bytes.
+# The models are CC BY-SA 3.0 (from Wikipedia text); each ships its LANG.gpm.license.
+pkgname=glassine-predict-model
+pkgver=0_git20261114
+# GlassineOS/shell main
+_commit=87929e415dbf29eaa1dc353fc0e0ff4d4c154d99
+pkgrel=0
+pkgdesc="Word prediction models of the GlassineOS on-screen keyboard"
+url="https://github.com/GlassineOS/shell"
+arch="noarch"
+license="CC-BY-SA-3.0"
+makedepends="gcc musl-dev python3 py3-pyarrow"
+# the main package pulls in English, the language of the images' default keyboard
+depends="$pkgname-en"
+options="!check" # the predictor's tests run in the shell repository
+_langs="en de"
+subpackages="$pkgname-en:_en $pkgname-de:_de"
+# the sources files of each language, as in tools/predict-model/LANG.sources
+source="shell-$_commit.tar.gz::https://github.com/GlassineOS/shell/archive/$_commit.tar.gz
+	simplewiki.parquet::https://huggingface.co/datasets/wikimedia/wikipedia/resolve/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/20231101.simple/train-00000-of-00001.parquet
+	eng_sentences.tsv.bz2::https://web.archive.org/web/20261105045929id_/https://downloads.tatoeba.org/exports/per_language/eng/eng_sentences.tsv.bz2
+	dewiki-03.parquet::https://huggingface.co/datasets/wikimedia/wikipedia/resolve/b04c8d1ceb2f5cd4588862100d08de323dccfbaa/20231101.de/train-00003-of-00020.parquet
+	tatoeba-sentences.tar.bz2::https://web.archive.org/web/20260323224434id_/https://downloads.tatoeba.org/exports/sentences.tar.bz2
+	"
+builddir="$srcdir/shell-$_commit"
+
+build() {
+	local t=tools/predict-model lang kind what file sum url args opts corpora
+	gcc -O2 -Wall -o glassine-predict-build src/predict/build.c -lm
+	for lang in $_langs; do
+		corpora=
+		while read -r kind what file sum url args; do
+			[ "$kind" = source ] || continue
+			# shellcheck disable=SC2086
+			python3 -I $t/extract.py "$what" "$srcdir/$file" "$lang-$file.txt" $args
+			corpora="$corpora $lang-$file.txt"
+		done < $t/$lang.sources
+		opts=$(sed -n 's/^options //p' $t/$lang.sources)
+		# shellcheck disable=SC2086
+		./glassine-predict-build $opts $lang $lang.gpm $corpora
+		sed -n 's/^licence //p' $t/$lang.sources > $lang.gpm.license
+		sha256sum $lang.gpm
+	done
+}
+
+package() {
+	mkdir -p "$pkgdir"
+}
+
+_model() {
+	pkgdesc="Word prediction model of the GlassineOS on-screen keyboard ($1)"
+	depends=""
+	install -Dm644 "$builddir/$2.gpm" "$builddir/$2.gpm.license" -t "$subpkgdir"/usr/share/glassine/predict/
+}
+
+_en() { _model English en; }
+_de() { _model German de; }
+
+sha512sums="
+c8bec58d7467d1fc6c52c8e328ba636cb2bc666025736f15f07dc00bd3490166c792ed321fa90f8e9ca066b39ec906633184a7c60eccbab3e4d2b273ff849315  shell-87929e415dbf29eaa1dc353fc0e0ff4d4c154d99.tar.gz
+cc7bd8832104be5d1bcea3b33977022e6d07f9ddb997b67ae4b7fb25816c6e4f49077f440f98838c100fca131b0ea6e5132c150525fd015367c9fd7b9cb9651d  simplewiki.parquet
+72391b15ca2f93eb42a2bef658fb0f4ff98430de02bf510cddab72bddb46b6b585714ec911dfbb5ab4b60434912df40ec59586f302d50d16ab818b3be92410e5  eng_sentences.tsv.bz2
+4ab1e3bbccf506d0796486a142c662f68569db1236a337ed102dae6e4408e0587a33379a6dca53bd941dcbca4075a22c1713653cabc2f4965ea636648b607c40  dewiki-03.parquet
+203fe8d75f1ab626aa1f3c8fbd3e410225355aeb3064365df73960bf9243f1540415fa036d7623279cb7ff44a3cbf0392d4e6241985722f787058b6537321e19  tatoeba-sentences.tar.bz2
+"

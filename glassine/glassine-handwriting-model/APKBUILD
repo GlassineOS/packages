@@ -1,0 +1,38 @@
+# Maintainer: Moritz Meißelbach <moritz@glassine.org>
+# Base models of glassine-handwriting (GlassineOS/handwriting docs/recognizer.md), one
+# subpackage per language, each the directory /usr/share/glassine/handwriting/LANG/
+# (recognizer.ghm, README with the recipe and data sources, LICENSES, prompts.txt).
+# The models are trained by hand and published as release assets of GlassineOS/handwriting
+# (models/README.md); the asset's URL follows the version. A newer English model: set
+# pkgver to its version and replace its sha512sums line (the release's .sha512 file).
+# Licences: the model GPL-2.0-or-later (trained on public-domain text rendered as
+# synthetic ink from OFL fonts; it holds neither), prompts.txt CC0-1.0; LICENSES lists all.
+pkgname=glassine-handwriting-model
+pkgver=1
+pkgrel=0
+pkgdesc="Handwriting recognition models of GlassineOS"
+url="https://github.com/GlassineOS/handwriting"
+arch="noarch"
+license="GPL-2.0-or-later AND CC0-1.0"
+# the main package pulls in English, the language of the images' default keyboard
+depends="$pkgname-en"
+options="!check" # a release is checked against the recognizer (make check-model) before it is published
+subpackages="$pkgname-en:_en"
+source="$pkgname-en-$pkgver.tar.gz::$url/releases/download/model-en-$pkgver/$pkgname-en-$pkgver.tar.gz"
+builddir="$srcdir"
+
+package() {
+	mkdir -p "$pkgdir"
+}
+
+_model() {
+	pkgdesc="Handwriting recognition model of GlassineOS ($1)"
+	depends=""
+	install -Dm644 "$srcdir/$pkgname-$2-$pkgver"/* -t "$subpkgdir"/usr/share/glassine/handwriting/$2/
+}
+
+_en() { _model English en; }
+
+sha512sums="
+df91fb509032c985bf3a8e551a4dec2dbbe793d24aa45101c171a9a5468ad0c3a802fa99ff7cf94263eda48f56a3ef9d28f57ca72daaad9f6b5fb18db8d04323  glassine-handwriting-model-en-1.tar.gz
+"

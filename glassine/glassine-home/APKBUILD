@@ -4,10 +4,10 @@
 # (glassine-shell) starts it as the home app (app_id glassine-home) and keeps it in
 # sway's scratchpad.
 pkgname=glassine-home
-pkgver=0_git20261112
+pkgver=0_git20261114
 # GlassineOS/home main
-_commit=29a3e23605819023b24c18798be6d7ccb5d7c992
-pkgrel=1
+_commit=48854b35c3471b85db054a77e05ac8d3ebc46f46
+pkgrel=0
 pkgdesc="GlassineOS Home screen and its widget runtime"
 url="https://github.com/GlassineOS/home"
 arch="all"
@@ -46,5 +46,5 @@ package() {
 	make UI_SYSTEM=1 DESTDIR="$pkgdir" PREFIX=/usr install
 }
 sha512sums="
-5239805c28df2b006eb1db04981081aa8cf2e04ab183e08e5699c41f955d932c065faf92e76cc0afec131f7a726f8de243fdf6870071700aa864a585ae2875a5  home-29a3e23605819023b24c18798be6d7ccb5d7c992.tar.gz
+4c424527d9cc36d071b45eb9e1c1868a0a5906b514d2b5893122466bc142d1c932ab0dc57f4a37b4f33904359f05ca4a2b99fb3fb0dba8de37d1fb2e19b16186  home-48854b35c3471b85db054a77e05ac8d3ebc46f46.tar.gz
 "

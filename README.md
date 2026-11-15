@@ -21,6 +21,8 @@ into `/etc/apk/keys/` and add this line to `/etc/apk/repositories`:
 The line has no architecture: apk adds it (`/aarch64`) itself. The site's landing page,
 written by `scripts/site.sh`, says the same.
 
+## Layout
+
 | Directory | Holds |
 |---|---|
 | `keys/` | `glassine-keys`: the repository's public signing key + the repository line |

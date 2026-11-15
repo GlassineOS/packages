@@ -2,10 +2,12 @@
 # glassine-handwriting from GlassineOS/handwriting: the on-device handwriting recognizer
 # behind a line contract (docs/recognizer.md) that the on-screen keyboard and apps start
 # as a child process. Its base models are glassine-handwriting-model-LANG.
+# glassine-handwriting-samples is the handwriting samples app (spec 002): write shown
+# text so the recognizer learns the person's hand, and donate reviewed samples.
 pkgname=glassine-handwriting
-pkgver=0_git20261114
+pkgver=0_git20261115
 # GlassineOS/handwriting main
-_commit=7276064d63757703eb5074cd3c086809b06c7a97
+_commit=7d9f0120e4b5a0416007d95dc465dd030594f300
 pkgrel=0
 pkgdesc="GlassineOS handwriting recognizer"
 url="https://github.com/GlassineOS/handwriting"
@@ -15,7 +17,7 @@ makedepends="json-c-dev pkgconf"
 # make check: the engine's unit tests, the features and characters against the trainer's
 # Python (numpy only), the contract against a tiny test model; no trained model needed
 checkdepends="python3 py3-numpy"
-subpackages="$pkgname-doc"
+subpackages="$pkgname-doc $pkgname-samples:samples:noarch"
 source="handwriting-$_commit.tar.gz::$url/archive/$_commit.tar.gz"
 builddir="$srcdir/handwriting-$_commit/recognizer"
 
@@ -25,6 +27,8 @@ build() {
 
 check() {
 	make check
+	# the samples app's flows against the recognizer just built (no toolkit needed)
+	make -C ../samples check HW_BIN="$builddir"/glassine-handwriting
 }
 
 package() {
@@ -32,6 +36,12 @@ package() {
 	install -Dm644 ../docs/recognizer.md ../docs/samples.md -t "$pkgdir"/usr/share/doc/$pkgname/
 }
 
+samples() {
+	pkgdesc="GlassineOS handwriting samples app"
+	depends="$pkgname=$pkgver-r$pkgrel gtk+3.0 py3-cairo py3-glassine-ui py3-gobject3 python3"
+	make -C "$builddir"/../samples DESTDIR="$subpkgdir" PREFIX=/usr install
+}
+
 sha512sums="
-bf855c22d1bb3549d8b8605249486626260db549080271a34ef9bb8c7850653bfa73b9ce4cd65ff5483f723a0705670ef83072af6910edce42890caa92594715  handwriting-7276064d63757703eb5074cd3c086809b06c7a97.tar.gz
+c98e4202f04f594c5d847967489c8a7366de8e580c404cb229e9a3c4514c77445310bea164a3ba44159c40e2c540062bf3529ac4803282ed56d9bdb9295a320a  handwriting-7d9f0120e4b5a0416007d95dc465dd030594f300.tar.gz
 "

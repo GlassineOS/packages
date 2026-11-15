@@ -1,14 +1,15 @@
 # Maintainer: Moritz Meißelbach <moritz@glassine.org>
 # glassine-handwriting from GlassineOS/handwriting: the on-device handwriting recognizer
 # behind a line contract (docs/recognizer.md) that the on-screen keyboard and apps start
-# as a child process. Its base models are glassine-handwriting-model-LANG.
+# as a child process. Its base models are glassine-handwriting-model-LANG; in prose fields
+# it also reads with the keyboard predictor's words (glassine-predict-model) when installed.
 # glassine-handwriting-samples is the handwriting samples app (spec 002): write shown
 # text so the recognizer learns the person's hand, and donate reviewed samples.
 pkgname=glassine-handwriting
 pkgver=0_git20261115
 # GlassineOS/handwriting main
-_commit=ed551a059f21a69c8b000828498d6f333ec46cbc
-pkgrel=5
+_commit=06f7c2396d77b4e79239fcc11049b564927f2484
+pkgrel=6
 pkgdesc="GlassineOS handwriting recognizer"
 url="https://github.com/GlassineOS/handwriting"
 arch="all"
@@ -43,5 +44,5 @@ samples() {
 }
 
 sha512sums="
-37782df663de6711e901804b9920935202521167db3c7b871e0d3384147874d6709895da1168b4397c8ccebc6fa8c7a07c157320e13d1df019e5c408aa54e40e  handwriting-ed551a059f21a69c8b000828498d6f333ec46cbc.tar.gz
+dea2d18b8c2c6e82b436f8d72327d1867883578f41dd2bc676640ad3254241d25f08d96f72146ef0cfc8f0831cf1e30eeb99b1b51e4e3f2379cf0f237c07ca05  handwriting-06f7c2396d77b4e79239fcc11049b564927f2484.tar.gz
 "

@@ -11,7 +11,7 @@ _commit=4efb1290740fa9b7fbc30c4f264317c866dbb281
 pkgrel=0
 pkgdesc="GlassineOS A/B boot slot tool (GPT slot attributes)"
 url="https://github.com/GlassineOS/boot"
-arch="all"
+arch="aarch64"
 license="GPL-2.0-or-later"
 makedepends="linux-headers"
 # boot's own test: a GPT disk image, sgdisk as the independent writer and checker (python3 edits tables)

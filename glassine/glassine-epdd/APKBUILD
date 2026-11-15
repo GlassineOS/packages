@@ -11,7 +11,7 @@ _commit=cb27c8b75b98691fc36348c91bf7fc65921f7c3d
 pkgrel=0
 pkgdesc="GlassineOS e-ink panel daemon (recovery, static) and boot splash"
 url="https://github.com/GlassineOS/epd"
-arch="all"
+arch="aarch64"
 license="GPL-2.0-or-later"
 makedepends="
 	libdrm-dev

@@ -5,20 +5,31 @@ CI that builds, signs and publishes them to
 
     https://pkgs.glassine.org/alpine/v3.24/glassine
 
-Only aarch64 is published: `REPO_URL` in `.github/workflows/publish.yml` is the
-repository's `aarch64` directory, and there is no other architecture.
+It is published for two architectures, each a directory below that URL:
+
+- `aarch64`: every recipe whose `arch=` allows it (the Note Air and everything on it);
+- `x86_64`: only the recipes listed in `arches/x86_64`, which are what the PC stages of
+  GlassineOS/images (`glassine-common`, `device-uefi-pc`) install from here
+  (`glassine-keys`, `glassine-deploy`, `glassine-reboot`). PCs take everything else,
+  Mesa included, from Alpine.
+
+Recipes for the Note Air's hardware (`forks/mesa`, `glassine-epdd`, `glassine-slot`,
+`qrtr-diag-sink`, `device-onyx-noteair`, `linux-glassine-sdm660`,
+`mesa-flatpak-glassine`) are `arch="aarch64"`. A recipe published for PCs is added to
+`arches/x86_64`.
 
 ## Using the repository
 
 GlassineOS images already have the repository line and the signing key, and the
-`glassine-keys` package keeps both up to date. On another Alpine v3.24 system on aarch64,
+`glassine-keys` package keeps both up to date. On another Alpine v3.24 system on aarch64
+or x86_64,
 put the public signing key, served under `keys/` on the same site
 (`https://pkgs.glassine.org/keys/`, the same file as `keys/glassine-keys/*.rsa.pub` here),
 into `/etc/apk/keys/` and add this line to `/etc/apk/repositories`:
 
     https://pkgs.glassine.org/alpine/v3.24/glassine
 
-The line has no architecture: apk adds it (`/aarch64`) itself. The site's landing page,
+The line has no architecture: apk adds it (`/aarch64`, `/x86_64`) itself. The site's landing page,
 written by `scripts/site.sh`, says the same.
 
 ## Layout
@@ -30,6 +41,7 @@ written by `scripts/site.sh`, says the same.
 | `glassine/` | our own software |
 | `forks/` | patched upstream software, renamed and installed beside the original (`sway-glassine` installs `/usr/bin/sway-glassine`, Alpine's `sway` stays), or an Alpine recipe rebuilt with our patches under Alpine's names (`mesa`); also one package of our own, `mesa-flatpak-glassine`, which ships the Flatpak GL extension bundles (see Flatpak GL extension below) |
 | `flatpak/` | Flatpak builds that devices get through a package here (see below) |
+| `arches/` | `x86_64`: the recipes published for x86_64 (see above) |
 | `scripts/` | build, pin, changed, docker-build, retain (which published versions stay) and site (landing page) scripts, see Building and CI |
 | `.github/` | the workflows (`build`, `publish`, `checksum`, `flatpak-gl`, `safety`) and `dependabot.yml` |
 
@@ -59,12 +71,16 @@ installed system to the new repository line on upgrade.
     scripts/docker-build.sh device/linux-glassine-sdm660
 
 builds in a clean `alpine:3.24` container into `out/alpine/v3.24/glassine/<arch>/`,
-signed with a throwaway key unless `ABUILD_PRIVKEY` holds the repository key. On an
-arm64 host the packages are aarch64, the only architecture published; elsewhere use an arm64 machine (the kernel takes
-hours under QEMU). Pin a source with `scripts/pin-source.sh URL [NAME]` (fails on HTTP
+signed with a throwaway key unless `ABUILD_PRIVKEY` holds the repository key. The
+packages are of the host's architecture: aarch64 on an arm64 host, x86_64 on an x86-64
+host. For aarch64 on another host use an arm64 machine (the kernel takes hours under
+QEMU). Pin a source with `scripts/pin-source.sh URL [NAME]` (fails on HTTP
 errors and broken archives; the `checksum` workflow runs it on a GitHub runner when
-GitHub rate-limits your network). `scripts/changed.sh BASE` lists what changed since `BASE`, in build
-order (keys, glassine, forks, device).
+GitHub rate-limits your network). `scripts/changed.sh [--arch ARCH] BASE` lists what changed since `BASE`, in build
+order (keys, glassine, forks, device); with `--arch`, only the recipes published for
+`ARCH`, and a change to a recipe's `arch=` line alone builds nothing for an
+architecture it already built for (so limiting a recipe to aarch64 doesn't rebuild
+the published aarch64 packages). `scripts/test-changed.sh` checks it.
 
 A recipe may depend on packages of other recipes here: the build resolves those from
 the published repository when they aren't rebuilt in the same run (so on an
@@ -73,19 +89,26 @@ architecture without a published repository, build them together).
 ## CI
 
 - `build`: pull requests and branches. Builds the changed packages with a throwaway
-  key on a GitHub-hosted arm64 runner and keeps them as an artifact for 14 days.
-- `publish`: `main`. Builds the changed packages signed with the repository key (a
-  secret of the `release` environment, one approval per run), takes every other
-  package from the live repository (its recipe must still exist), indexes, signs and
-  deploys everything to GitHub Pages, with a landing page that `scripts/site.sh` writes
-  (key and repository line, see Using the repository). Earlier versions stay for a while,
+  key, per architecture on a native GitHub-hosted runner (arm64, x86-64), and keeps them
+  as an artifact for 14 days. An architecture with nothing published yet builds all
+  its recipes.
+- `publish`: `main`. Per architecture, on a native runner: builds the changed
+  packages signed with the repository key (a secret of the `release` environment, one
+  approval per architecture job; both jobs wait at the same time), takes every other
+  package from that architecture's live repository (its recipe must still be published
+  for it), indexes and signs. An architecture with nothing to build carries its live
+  repository forward; one with nothing published yet builds all its recipes. Then one
+  job puts both architectures and a landing page that `scripts/site.sh` writes (key and
+  repository line, see Using the repository) into one site and deploys it to GitHub
+  Pages, which replaces the whole site each time. Earlier versions stay for a while,
   see Earlier versions.
   Needs the repository to be public (environments and Pages on private repositories
   need a paid plan).
 
 ## Earlier versions
 
-GlassineOS/images installs the exact versions its locks (`stages/*/lock`) name, and
+GlassineOS/images installs the exact versions its locks name (`stages/*/lock` for
+aarch64, `stages/*/lock.x86_64` for x86_64), and
 only a lock refresh moves them, so a publish must not take a locked version away. The
 repository therefore keeps earlier versions beside the newest in the same signed
 `APKINDEX` (apk takes several versions of one name: `apk add name` installs the newest,
@@ -94,12 +117,13 @@ package name:
 
 - the newest version stays (as before, only while its recipe exists);
 - an earlier version stays for 30 days after a newer one replaced it;
-- a version that a lock of GlassineOS/images `main` names stays, whatever its age (the
-  publish job reads the locks from a fresh clone; if the clone fails, only the 30 days
-  hold, with a warning);
-- if everything together exceeds 900 MiB, replaced versions that no lock names go,
-  longest-replaced first; if the newest and the locked versions alone exceed it, the
-  publish fails.
+- a version that a lock of GlassineOS/images `main` for that architecture names stays,
+  whatever its age (the publish job reads the locks from a fresh clone; if the clone
+  fails, only the 30 days hold, with a warning);
+- if an architecture's packages together exceed its share of the 900 MiB cap (aarch64
+  836 MiB, x86_64 64 MiB, `CAP` in `publish.yml`), its replaced versions that no lock
+  names go, longest-replaced first; if the newest and the locked versions alone exceed
+  it, the publish fails. The site job checks that the whole site stays under 900 MiB.
 
 A version rebuilt under the same version string replaces the published file, as before.
 `scripts/test-retain.sh` checks the rule on made-up indexes (the `build` workflow runs it).
@@ -109,7 +133,9 @@ Sizes, measured 2026-11-15: the site holds 49 packages, 97 MiB. The largest are
 `mesa` (12 MiB); everything else is under 6 MiB a recipe. In the 30 days before,
 `glassine-shell` (3 MiB) had 19 versions, `mesa-flatpak-glassine` 3, `sway-glassine` and
 `wvkbd-glassine` 7, `glassine-deploy` and `device-onyx-noteair` 13 (both tiny), and
-`publish` succeeded up to 16 times a day. At that rate the replaced versions add about
+`publish` succeeded up to 16 times a day. The x86_64 directory is about 0.1 MiB
+(`glassine-keys`, `glassine-deploy` with its `-doc`, `glassine-reboot`; measured in a
+local build 2026-11-16), so x86_64 takes almost nothing of the cap. At that rate the replaced versions add about
 165 MiB (two `mesa-flatpak-glassine` and eighteen `glassine-shell` versions are most of
 it), so the site settles near 260 MiB. GitHub Pages limits a site to 1 GB (hence the
 cap) and has a soft bandwidth limit of 100 GB a month: a publish that downloaded the

@@ -1,0 +1,7 @@
+# The recipes published for x86_64 (scripts/changed.sh --arch x86_64): what the PC
+# stages of GlassineOS/images (glassine-common, device-uefi-pc) install from this
+# repository. Everything else here is for the Note Air, which is aarch64; aarch64 has
+# no list and builds every recipe whose arch= allows it.
+keys/glassine-keys
+glassine/glassine-deploy
+glassine/glassine-reboot

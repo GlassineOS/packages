@@ -1,6 +1,9 @@
-# Check build: the changed packages, signed with a throwaway key, kept as an artifact.
-# Never published. On main the publish workflow builds instead (once the repo is public).
-# Also the host test of the publish job's retention rule (scripts/test-retain.sh).
+# Check build: the changed packages, for each architecture they are published for
+# (scripts/changed.sh --arch; all of an architecture's recipes while nothing is published
+# for it yet), signed with a throwaway key, kept as an artifact. Never published. On main
+# the publish workflow builds instead (once the repo is public).
+# Also the host tests of the publish job's retention rule (scripts/test-retain.sh) and
+# package selection (scripts/test-changed.sh).
 name: build
 on:
   push:
@@ -21,7 +24,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # the publish job's retention rule (scripts/retain.sh), on made-up indexes
+  # the publish job's retention rule (scripts/retain.sh), on made-up indexes, and its
+  # package selection (scripts/changed.sh --arch), on a made-up repository
   retain:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -29,9 +33,18 @@ jobs:
       - uses: actions/checkout@v7
       # in the container the publish uses (busybox awk)
       - run: docker run --rm -v "$PWD:/src:ro" alpine:3.24 sh /src/scripts/test-retain.sh
+      - run: sh scripts/test-changed.sh
   build:
     if: github.ref != 'refs/heads/main' || github.event_name != 'push' || github.event.repository.private
-    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+          - arch: x86_64
+            runner: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v7
@@ -44,12 +57,21 @@ jobs:
           INPUT: ${{ inputs.packages }}
           PR_BASE: ${{ github.event.pull_request.base.sha }}
           BEFORE: ${{ github.event.before }}
+          ARCH: ${{ matrix.arch }}
         run: |
-          case "$EVENT" in
-            workflow_dispatch) if [ "$INPUT" = all ]; then p=$(scripts/changed.sh all); else p=$INPUT; fi ;;
-            pull_request) p=$(scripts/changed.sh "$PR_BASE") ;;
-            *) p=$(scripts/changed.sh "$BEFORE") ;;
-          esac
+          a=$ARCH
+          code=$(curl -s -o /dev/null -w '%{http_code}' "https://pkgs.glassine.org/alpine/v3.24/glassine/$a/APKINDEX.tar.gz")
+          if [ "$code" = 404 ]; then
+            echo "::notice::nothing published for $a yet: building all its recipes"
+            p=$(scripts/changed.sh --arch "$a" all)
+          else
+            case "$EVENT" in
+              workflow_dispatch) if [ "$INPUT" = all ]; then p=$(scripts/changed.sh --arch "$a" all)
+                else p=$(scripts/changed.sh --arch "$a" all | grep -xF "$(printf '%s\n' $INPUT)" || :); fi ;;
+              pull_request) p=$(scripts/changed.sh --arch "$a" "$PR_BASE") ;;
+              *) p=$(scripts/changed.sh --arch "$a" "$BEFORE") ;;
+            esac
+          fi
           p=$(printf "%s" "$p" | tr "\n" " ")
           echo "packages=$p" >> "$GITHUB_OUTPUT"
           echo "packages: ${p:-none}"
@@ -59,6 +81,6 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: steps.select.outputs.packages != ''
         with:
-          name: packages-${{ github.sha }}
+          name: packages-${{ matrix.arch }}-${{ github.sha }}
           retention-days: 14
           path: out/

@@ -1,19 +1,20 @@
-# Publish: build the changed packages signed with the repository key, add the packages
-# of the live repository that scripts/retain.sh keeps (earlier versions included, see
-# README "Earlier versions"), index, sign, deploy to Pages (pkgs.glassine.org).
+# Publish: for each architecture (aarch64, x86_64), build the changed packages signed
+# with the repository key, add the packages of the live repository that
+# scripts/retain.sh keeps (earlier versions included, see README "Earlier versions"),
+# index, sign; then deploy both architectures as one site to Pages (pkgs.glassine.org).
 # The signing key is a secret of the "release" environment, which needs an approval
-# per run. Environments and Pages on private repositories need a paid plan, so this
-# starts once the repository is public.
+# (one per architecture job; both wait at the same time). Environments and Pages on
+# private repositories need a paid plan, so this starts once the repository is public.
 name: publish
 on:
   push:
     branches: [main]
     # only recipe changes publish (each run waits for an approval)
-    paths: ['keys/**', 'device/**', 'glassine/**', 'forks/**']
+    paths: ['keys/**', 'device/**', 'glassine/**', 'forks/**', 'arches/**']
   workflow_dispatch:
     inputs:
       packages:
-        description: 'package directories to rebuild, or "all"'
+        description: 'package directories to rebuild, or "all" (each architecture builds those published for it)'
         default: all
 
 permissions:
@@ -24,16 +25,20 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  REPO_URL: https://pkgs.glassine.org/alpine/v3.24/glassine/aarch64
+  # the repository; each architecture is a directory below it
+  REPO_URL: https://pkgs.glassine.org/alpine/v3.24/glassine
 
 jobs:
-  build:
+  # what each architecture builds: its changed recipes (scripts/changed.sh --arch), or
+  # all of them while nothing is published for it yet (a new architecture)
+  select:
     if: ${{ !github.event.repository.private }}
-    runs-on: ubuntu-24.04-arm
-    timeout-minutes: 180
-    environment: release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
     outputs:
-      packages: ${{ steps.select.outputs.packages }}
+      aarch64: ${{ steps.select.outputs.aarch64 }}
+      x86_64: ${{ steps.select.outputs.x86_64 }}
+      any: ${{ steps.select.outputs.any }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -45,57 +50,123 @@ jobs:
           INPUT: ${{ inputs.packages }}
           BEFORE: ${{ github.event.before }}
         run: |
-          if [ "$EVENT" = workflow_dispatch ]; then
-            if [ "$INPUT" = all ]; then p=$(scripts/changed.sh all); else p=$INPUT; fi
-          else
-            p=$(scripts/changed.sh "$BEFORE")
-          fi
-          p=$(printf "%s" "$p" | tr "\n" " ")
-          echo "packages=$p" >> "$GITHUB_OUTPUT"
-          echo "packages: ${p:-none}"
-      # every version a lock of GlassineOS/images main names stays published
+          any=
+          for a in aarch64 x86_64; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$REPO_URL/$a/APKINDEX.tar.gz")
+            case "$code" in
+            200)
+              if [ "$EVENT" != workflow_dispatch ]; then p=$(scripts/changed.sh --arch "$a" "$BEFORE")
+              elif [ "$INPUT" = all ]; then p=$(scripts/changed.sh --arch "$a" all)
+              else p=$(scripts/changed.sh --arch "$a" all | grep -xF "$(printf '%s\n' $INPUT)" || :)
+              fi ;;
+            404)
+              echo "::notice::nothing published for $a yet: building all its recipes"
+              p=$(scripts/changed.sh --arch "$a" all) ;;
+            *) echo "::error::$REPO_URL/$a/APKINDEX.tar.gz: HTTP $code"; exit 1 ;;
+            esac
+            p=$(printf "%s" "$p" | tr "\n" " ")
+            echo "$a=$p" >> "$GITHUB_OUTPUT"
+            echo "$a: ${p:-none}"
+            any=$any$p
+          done
+          echo "any=$any" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: select
+    if: needs.select.outputs.any != ''
+    strategy:
+      matrix:
+        include:
+          # CAP: each architecture's share of the 900 MiB site cap (scripts/retain.sh);
+          # the site job checks the sum
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            lock: lock
+            cap: 876609536 # 836 MiB
+          - arch: x86_64
+            runner: ubuntu-24.04
+            lock: lock.x86_64
+            cap: 67108864 # 64 MiB
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    environment: release
+    steps:
+      - uses: actions/checkout@v7
+      # every version a lock of GlassineOS/images main names stays published (stages/*/lock
+      # for aarch64, stages/*/lock.x86_64 for x86_64)
       - name: The images locks
-        if: steps.select.outputs.packages != ''
+        env:
+          LOCK: ${{ matrix.lock }}
         run: |
           mkdir -p work
           if git clone -q --depth 1 https://github.com/GlassineOS/images work/images; then
-            cat work/images/stages/*/lock > work/locks
-            echo "$(wc -l < work/locks) lock lines"
+            for f in work/images/stages/*/"$LOCK"; do
+              if [ -f "$f" ]; then cat "$f"; fi
+            done > work/locks
+            echo "$(wc -l < work/locks) lock lines ($LOCK)"
           else
             echo "::warning::GlassineOS/images unreachable: only the 30-day window keeps earlier versions"
             : > work/locks
           fi
           rm -rf work/images
       # the last publish's packages, so a publish doesn't download the whole site again
+      # ("published-": the aarch64 cache from before there were two architectures)
       - uses: actions/cache/restore@v6
-        if: steps.select.outputs.packages != ''
         with:
           path: work/published
-          key: published-${{ github.run_id }}
-          restore-keys: published-
+          key: published-${{ matrix.arch }}-${{ github.run_id }}
+          restore-keys: |
+            published-${{ matrix.arch }}-
+            ${{ matrix.arch == 'aarch64' && 'published-' || format('published-{0}-', matrix.arch) }}
+      # no packages for this architecture: it carries its published repository forward
       - name: Build, merge with the live repository, index
-        if: steps.select.outputs.packages != ''
         env:
           ABUILD_PRIVKEY: ${{ secrets.ABUILD_PRIVKEY }}
+          CAP: ${{ matrix.cap }}
+          ARCH: ${{ matrix.arch }}
+          PACKAGES: ${{ needs.select.outputs[matrix.arch] }}
         run: |
           [ -n "$ABUILD_PRIVKEY" ] || { echo "::error::ABUILD_PRIVKEY missing in the release environment"; exit 1; }
-          scripts/docker-build.sh --merge "$REPO_URL" --locks work/locks --cache work/published \
-            ${{ steps.select.outputs.packages }}
-          scripts/site.sh out
-          echo "site: $(du -sh out | cut -f1)"
+          [ "$(uname -m)" = "$ARCH" ] || { echo "::error::runner is $(uname -m), not $ARCH"; exit 1; }
+          echo "$ARCH: ${PACKAGES:-nothing to build}"
+          scripts/docker-build.sh --merge "$REPO_URL/$ARCH" --locks work/locks --cache work/published \
+            $PACKAGES
+          echo "$ARCH: $(du -sh "out/alpine" | cut -f1)"
       - uses: actions/cache/save@v6
-        if: steps.select.outputs.packages != ''
         with:
           path: work/published
-          key: published-${{ github.run_id }}
+          key: published-${{ matrix.arch }}-${{ github.run_id }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: repo-${{ matrix.arch }}-${{ github.run_id }}
+          retention-days: 1
+          path: out/
+
+  # one site with both architectures (Pages replaces the whole site on each deploy)
+  site:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: repo-*-${{ github.run_id }}
+          merge-multiple: true
+          path: out
+      - name: Landing page, size
+        run: |
+          scripts/site.sh out
+          for d in out/alpine/*/glassine/*/; do echo "$d: $(du -sh "$d" | cut -f1)"; done
+          size=$(du -sb out | cut -f1)
+          echo "site: $size bytes"
+          [ "$size" -le 943718400 ] || { echo "::error::the site is larger than 900 MiB"; exit 1; }
       - uses: actions/upload-pages-artifact@v5
-        if: steps.select.outputs.packages != ''
         with:
           path: out
 
   deploy:
-    needs: build
-    if: needs.build.outputs.packages != ''
+    needs: site
     runs-on: ubuntu-latest
     permissions:
       pages: write

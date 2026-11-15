@@ -10,11 +10,13 @@
 # mode (glassine-devmode: USB networking and SSH with glassine.devmode=usb, boot's
 # README). The image links the seed into sysinit and developer mode into default.
 # glassine-hibernate-setup (default) creates the hibernate swap file the device's
-# deploy.conf asks for.
+# deploy.conf asks for. glassine-first-start (boot) turns an installed system (a pool
+# image made by `glassine-deploy init --install-marker`) into a normal one on its first,
+# bare boot: grows the system partition, formats userdata, selects the first deployment.
 pkgname=glassine-deploy
-pkgver=0.4.7
+pkgver=0.5.0
 # GlassineOS/boot main
-_commit=3ab5ecd18df85a9fefc7dce7ca16138e4e2ebb4f
+_commit=2b6cb72d5ec555b3713e8ba2b3d53aa5118331fe
 pkgrel=0
 pkgdesc="GlassineOS deployments: read-only bases, tried updates, reset, hibernation"
 url="https://github.com/GlassineOS/boot"
@@ -22,9 +24,10 @@ arch="noarch"
 license="GPL-2.0-or-later"
 # debugfs and filefrag are in e2fsprogs-extra; ash, flock, awk and blkid in busybox;
 # developer mode: udhcpd (busybox-extras), sshd and ssh-keygen (openssh-server, whose
-# own sshd service stays off). device-onyx-noteair before 4 shipped its own
+# own sshd service stays off); the first start: btrfs-progs (resize) and e2fsprogs (mke2fs,
+# dumpe2fs). device-onyx-noteair before 4 shipped its own
 # glassine-device-seed.
-depends="apk-tools busybox busybox-extras e2fsprogs e2fsprogs-extra openrc openssh-server
+depends="apk-tools btrfs-progs busybox busybox-extras e2fsprogs e2fsprogs-extra openrc openssh-server
 	!device-onyx-noteair<4"
 # the tests need privileged Docker (real btrfs and overlayfs); they run in boot's CI.
 # !tracedeps: no automatic provides, or /usr/sbin/apk would provide cmd:apk and
@@ -38,11 +41,11 @@ builddir="$srcdir/boot-$_commit"
 package() {
 	local f
 	for f in glassine glassine-deploy glassine-deploy-accept glassine-switch-hook glassine-hibernate \
-		glassine-device-seed glassine-devmode; do
+		glassine-device-seed glassine-devmode glassine-first-start; do
 		install -Dm755 sbin/$f "$pkgdir"/usr/sbin/$f
 	done
 	for f in glassine-switch glassine-mount-ro glassine-deploy-accept glassine-device-seed glassine-devmode \
-		glassine-hibernate-setup; do
+		glassine-hibernate-setup glassine-first-start; do
 		install -Dm755 openrc/$f "$pkgdir"/etc/init.d/$f
 	done
 	ln -s glassine "$pkgdir"/usr/sbin/apk
@@ -57,5 +60,5 @@ package() {
 	install -d "$pkgdir"/etc/glassine-bootimg/health.d "$pkgdir"/etc/glassine/hibernate.d
 }
 sha512sums="
-82bf5046cb1875f4f05545e2fcc4fac125b973f8d47231f4e3c7e5a7127f2e029d3c7d6b2e018f51cc1754c1269f3518c28c67803e639ec9e606287f2d89ed0a  boot-3ab5ecd18df85a9fefc7dce7ca16138e4e2ebb4f.tar.gz
+a15090b83833048c3fab91241d9bd5a64fdc1e6fb9bab65f8590f6e0f140055036b5fa3cd358c45347e990f4f776c3a3907cb091bd11a20e22e112541c67bfae  boot-2b6cb72d5ec555b3713e8ba2b3d53aa5118331fe.tar.gz
 "

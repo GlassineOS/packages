@@ -5,4 +5,6 @@ rc-update add glassine-mount-ro shutdown >/dev/null 2>&1
 rc-update add glassine-deploy-accept default >/dev/null 2>&1
 # the hibernate swap file (nothing to do where deploy.conf turns hibernation off)
 rc-update add glassine-hibernate-setup default >/dev/null 2>&1
+# the first start of an installed system (does nothing without the install marker)
+rc-update add glassine-first-start boot >/dev/null 2>&1
 exit 0

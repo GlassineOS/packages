@@ -5,13 +5,33 @@ CI that builds, signs and publishes them to
 
     https://pkgs.glassine.org/alpine/v3.24/glassine
 
+Only aarch64 is published: `REPO_URL` in `.github/workflows/publish.yml` is the
+repository's `aarch64` directory, and there is no other architecture.
+
+## Using the repository
+
+GlassineOS images already have the repository line and the signing key, and the
+`glassine-keys` package keeps both up to date. On another Alpine v3.24 system on aarch64,
+put the public signing key, served under `keys/` on the same site
+(`https://pkgs.glassine.org/keys/`, the same file as `keys/glassine-keys/*.rsa.pub` here),
+into `/etc/apk/keys/` and add this line to `/etc/apk/repositories`:
+
+    https://pkgs.glassine.org/alpine/v3.24/glassine
+
+The line has no architecture: apk adds it (`/aarch64`) itself. The site's landing page,
+written by `scripts/site.sh`, says the same.
+
+## Layout
+
 | Directory | Holds |
 |---|---|
 | `keys/` | `glassine-keys`: the repository's public signing key + the repository line |
 | `device/` | kernels and device packages (`linux-glassine-sdm660`, …) |
 | `glassine/` | our own software |
-| `forks/` | patched upstream software, renamed and installed beside the original (`sway-glassine` installs `/usr/bin/sway-glassine`, Alpine's `sway` stays), or an Alpine recipe rebuilt with our patches under Alpine's names (`mesa`) |
+| `forks/` | patched upstream software, renamed and installed beside the original (`sway-glassine` installs `/usr/bin/sway-glassine`, Alpine's `sway` stays), or an Alpine recipe rebuilt with our patches under Alpine's names (`mesa`); also one package of our own, `mesa-flatpak-glassine`, which ships the Flatpak GL extension bundles (see Flatpak GL extension below) |
 | `flatpak/` | Flatpak builds that devices get through a package here (see below) |
+| `scripts/` | build, pin, changed, docker-build and site (landing page) scripts, see Building and CI |
+| `.github/` | the workflows (`build`, `publish`, `checksum`, `flatpak-gl`, `safety`) and `dependabot.yml` |
 
 A recipe directory has the name of its main package. Sources come from tags or pinned
 commits of the GlassineOS repositories (checksum in the recipe); patches live in those
@@ -40,7 +60,7 @@ installed system to the new repository line on upgrade.
 
 builds in a clean `alpine:3.24` container into `out/alpine/v3.24/glassine/<arch>/`,
 signed with a throwaway key unless `ABUILD_PRIVKEY` holds the repository key. On an
-arm64 host the packages are aarch64; elsewhere use an arm64 machine (the kernel takes
+arm64 host the packages are aarch64, the only architecture published; elsewhere use an arm64 machine (the kernel takes
 hours under QEMU). Pin a source with `scripts/pin-source.sh URL [NAME]` (fails on HTTP
 errors and broken archives; the `checksum` workflow runs it on a GitHub runner when
 GitHub rate-limits your network). `scripts/changed.sh BASE` lists what changed since `BASE`, in build
@@ -57,7 +77,8 @@ architecture without a published repository, build them together).
 - `publish`: `main`. Builds the changed packages signed with the repository key (a
   secret of the `release` environment, one approval per run), takes every other
   package from the live repository (its recipe must still exist), indexes, signs and
-  deploys everything to GitHub Pages. Only the newest version of each package stays.
+  deploys everything to GitHub Pages, with a landing page that `scripts/site.sh` writes
+  (key and repository line, see Using the repository). Only the newest version of each package stays.
   Needs the repository to be public (environments and Pages on private repositories
   need a paid plan).
 

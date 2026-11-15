@@ -35,7 +35,7 @@ license="GPL-2.0-or-later"
 # bluez-btmgmt (the Bluetooth address: the chip has none)
 # GlassineOS/installer: the description (devices/onyx-noteair.toml) and
 # glassine-device-files, which checks it as the installer does and derives the files
-_installer=9f578b8b27988b3043527658c3d719d75b10e36c
+_installer=3d8a5949472a9ee9060681b2fc78741166649347
 depends="busybox glassine-deploy>=0.4.0 glassine-epdd glassine-slot
 	alsa-utils bluez-btmgmt qrtr qrtr-diag-sink rmtfs tqftpserv"
 source="installer-$_installer.tar.gz::https://github.com/GlassineOS/installer/archive/$_installer.tar.gz
@@ -487,7 +487,7 @@ package() {
 	install -Dm644 "$srcdir"/migrate.list "$pkgdir"/usr/share/glassine/migrate.d/device-onyx-noteair.list
 }
 sha512sums="
-4db956ffbf0602b6f3e28200393e4a2bbaefab4557eaed7745dc92753a11993e9a263ad58b81041c9fc7070c1a9cbe7f6db5d27dcc38fc51cb0ca66a0834b6c6  installer-9f578b8b27988b3043527658c3d719d75b10e36c.tar.gz
+71ecb2850e717a48a775ee13cf8d0e70d142e2a7d1efae5ef8d877904533cfca7fa91e36ff650029bf18dd358cbe7ad9843a2320b2f1876b93659f12a727a54c  installer-3d8a5949472a9ee9060681b2fc78741166649347.tar.gz
 a7f981b0c35bacfd4a06c67b272c5d75dcc6efb9ff9eabcd344f39bd3e39e82ff5ae9c1dd716f3b5520b3cf62efaa851e3666e97d264777fb10dbe44cf74a741  deploy.conf.policy
 ce8889318d8f4d60eb097ae77eaf68f3e1b49a2eb6abad264567b2672761f4b0d1a0202dd81df56891fba3084883cada6980d5594ea0a332622cb5d445a34cb0  epd.conf
 9706b48fca84aa8f0714f30994c648264612bdd078a21a51c9dbd5195445e2f3654068532c07818e9606e881c31a9820000a8dce7085dc00e9e69af1ef85abc1  glassine-clock

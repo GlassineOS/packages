@@ -6,9 +6,9 @@
 # libwlroots stay as they are: this package installs only /usr/bin/sway-glassine, the
 # binary the GlassineOS session starts. swaymsg and the rest come from Alpine's sway.
 pkgname=sway-glassine
-pkgver=1.10.1_git20261114
+pkgver=1.10.1_git20261115
 # GlassineOS/sway glassine/1.10.1
-_commit=43e10414257a2337cc3479f2d7304ed4bfeef83f
+_commit=113b43382b2f62ef843b4b76ca80676e6e550a70
 _wlrver=0.18.2
 pkgrel=0
 pkgdesc="sway with the GlassineOS e-ink output backend, gestures and ink areas"
@@ -96,6 +96,6 @@ package() {
 }
 
 sha512sums="
-82522d0d68fecde6ad04ace970d61a9867100de28f3f8bdda39b3822d78aef0f62c29c91eb644635845ea167a90d0280c907b2487400610c9dfeb09f9cf7d206  sway-43e10414257a2337cc3479f2d7304ed4bfeef83f.tar.gz
+a1893583a805b74a6b20cd5449ba12f1973972504613de0f9ef30f5761c3a3013573e685c6c1a0115791f5a730ef422e39f105516e04071decf3ad315af2371f  sway-113b43382b2f62ef843b4b76ca80676e6e550a70.tar.gz
 59b0889f65e9cd914273c87a6547fa865577c34e26ddb178974be665721ac77d7146b0f45f341b64a44eb4b0bd689fab16d7972130eac443260181ff2b5a9ef7  wlroots-0.18.2.tar.gz
 "

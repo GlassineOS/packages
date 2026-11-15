@@ -8,9 +8,9 @@
 pkgname=sway-glassine
 pkgver=1.10.1_git20261115
 # GlassineOS/sway glassine/1.10.1
-_commit=113b43382b2f62ef843b4b76ca80676e6e550a70
+_commit=71fbe1e1aa1a9e51c0712c8724065b10c5654b76
 _wlrver=0.18.2
-pkgrel=0
+pkgrel=1
 pkgdesc="sway with the GlassineOS e-ink output backend, gestures and ink areas"
 url="https://github.com/GlassineOS/sway"
 arch="all"
@@ -96,6 +96,6 @@ package() {
 }
 
 sha512sums="
-a1893583a805b74a6b20cd5449ba12f1973972504613de0f9ef30f5761c3a3013573e685c6c1a0115791f5a730ef422e39f105516e04071decf3ad315af2371f  sway-113b43382b2f62ef843b4b76ca80676e6e550a70.tar.gz
+a2e3b83b9c422e30fccffe9f33d567919227084bb6c7ad2cdafe779b55ae34157eb3a22bc8b0a27b0fdbdb1ccf23ce5ba2621976989f9e61e466ea72581560f8  sway-71fbe1e1aa1a9e51c0712c8724065b10c5654b76.tar.gz
 59b0889f65e9cd914273c87a6547fa865577c34e26ddb178974be665721ac77d7146b0f45f341b64a44eb4b0bd689fab16d7972130eac443260181ff2b5a9ef7  wlroots-0.18.2.tar.gz
 "

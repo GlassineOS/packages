@@ -3,20 +3,33 @@
 # Build packages with abuild into one repository directory. Runs as root in a clean
 # alpine container with this repository at /src (scripts/docker-build.sh starts it):
 #
-#   scripts/build.sh [--merge URL] DIR...      e.g. device/linux-glassine-sdm660
+#   scripts/build.sh [--merge URL [--locks FILE] [--cache DIR]] DIR...
+#                                              e.g. device/linux-glassine-sdm660
 #
 # Output: out/alpine/<branch>/glassine/<arch>/ with *.apk and a signed APKINDEX.
 # Signing: ABUILD_PRIVKEY (PEM) must match one of keys/glassine-keys/*.rsa.pub; without
 # it an ephemeral key signs (a check build, never published).
-# --merge URL: also take every package of the published repository at URL whose
-# recipe still exists and that was not rebuilt now (the publish job; Pages replaces
-# the whole site, so each deploy must carry everything).
+# --merge URL: also take the packages of the published repository at URL that
+# scripts/retain.sh keeps (the publish job; Pages replaces the whole site, so each
+# deploy must carry everything): the newest version of each package whose recipe still
+# exists, earlier versions for 30 days after they were replaced, and every version a
+# lock line in FILE (--locks, GlassineOS/images' stages/*/lock) names. Paths are
+# relative to /src.
+# --cache DIR: the packages of the last publish (with its APKINDEX.tar.gz), used instead
+# of downloading when that index is the one published at URL; refreshed at the end.
 set -eu
 
 BRANCH=v3.24
-merge=
-if [ "${1:-}" = --merge ]; then merge=$2; shift 2; fi
-[ $# -gt 0 ] || { echo "usage: $0 [--merge URL] DIR..." >&2; exit 2; }
+merge= locks= cache=
+while :; do
+	case "${1:-}" in
+	--merge) merge=$2; shift 2 ;;
+	--locks) locks=$2; shift 2 ;;
+	--cache) cache=$2; shift 2 ;;
+	*) break ;;
+	esac
+done
+[ $# -gt 0 ] || { echo "usage: $0 [--merge URL [--locks FILE] [--cache DIR]] DIR..." >&2; exit 2; }
 
 cd /src
 arch=$(apk --print-arch)
@@ -79,29 +92,46 @@ done
 rm -rf "$out"
 mkdir -p "$out"
 find "$home/repo" -name '*.apk' -path "*/$arch/*" -exec cp {} "$out/" \;
-built=$(cd "$out" && for f in *.apk; do tar -xzOf "$f" .PKGINFO 2>/dev/null | sed -n 's/^pkgname = //p'; done)
+# name version size of each package built now
+built=$(cd "$out" && for f in *.apk; do
+	tar -xzOf "$f" .PKGINFO 2>/dev/null | awk -v s="$(stat -c %s "$f")" \
+		'/^pkgname = /{p=$3} /^pkgver = /{v=$3} END{print p, v, s}'
+done)
 
 if [ -n "$merge" ]; then
 	tmp=$home/merge
 	mkdir -p "$tmp"
 	if wget -q -O "$tmp/APKINDEX.tar.gz" "$merge/APKINDEX.tar.gz"; then
 		apk --keys-dir "$home/keys" verify "$tmp/APKINDEX.tar.gz"
+		# name version origin buildtime size, one line per package (and version)
 		tar -xzOf "$tmp/APKINDEX.tar.gz" APKINDEX | awk -v RS= '{
-			p = v = o = ""
+			p = v = o = t = s = ""
 			n = split($0, l, "\n")
 			for (i = 1; i <= n; i++) {
 				if (l[i] ~ /^P:/) p = substr(l[i], 3)
 				if (l[i] ~ /^V:/) v = substr(l[i], 3)
 				if (l[i] ~ /^o:/) o = substr(l[i], 3)
+				if (l[i] ~ /^t:/) t = substr(l[i], 3)
+				if (l[i] ~ /^S:/) s = substr(l[i], 3)
 			}
-			print p, v, o
-		}' > "$tmp/list"
-		while read -r p v o; do
-			echo "$built" | grep -qxF "$p" && continue
-			ls -d ./*/"$o"/APKBUILD >/dev/null 2>&1 || { echo "drop $p (recipe $o gone)"; continue; }
-			wget -q -O "$out/$p-$v.apk" "$merge/$p-$v.apk"
+			print p, v, o, t + 0, s + 0
+		}' > "$tmp/live"
+		printf '%s\n' "$built" > "$tmp/built"
+		if [ -n "$locks" ]; then cp "$locks" "$tmp/locks"; else : > "$tmp/locks"; fi
+		for f in ./*/*/APKBUILD; do basename "$(dirname "$f")"; done > "$tmp/recipes"
+		sh scripts/retain.sh "$tmp/live" "$tmp/built" "$tmp/locks" "$tmp/recipes" > "$tmp/keep"
+		usecache=
+		if [ -n "$cache" ] && cmp -s "$cache/APKINDEX.tar.gz" "$tmp/APKINDEX.tar.gz"; then
+			usecache=1; echo "taking the published packages from $cache"
+		fi
+		while read -r p v; do
+			if [ -n "$usecache" ] && [ -f "$cache/$p-$v.apk" ]; then
+				cp "$cache/$p-$v.apk" "$out/"
+			else
+				wget -q -O "$out/$p-$v.apk" "$merge/$p-$v.apk"
+			fi
 			apk --keys-dir "$home/keys" verify "$out/$p-$v.apk" >/dev/null
-		done < "$tmp/list"
+		done < "$tmp/keep"
 	else
 		echo "nothing published at $merge yet"
 	fi
@@ -112,5 +142,12 @@ rm -f "$out/APKINDEX.tar.gz"
 chown -R builder "$out"
 su builder -c "cd '$out' && apk index -q -o APKINDEX.tar.gz --rewrite-arch $arch \
 	--description 'GlassineOS $BRANCH' *.apk && abuild-sign -q APKINDEX.tar.gz"
+# what the next publish compares with the published index
+if [ -n "$cache" ]; then
+	rm -rf "$cache"
+	mkdir -p "$cache"
+	cp "$out"/*.apk "$out/APKINDEX.tar.gz" "$cache/"
+	chown -R "$(stat -c %u /src):$(stat -c %g /src)" "$cache"
+fi
 chown -R "$(stat -c %u /src):$(stat -c %g /src)" /src/out
 ls -la "$out"

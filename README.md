@@ -30,7 +30,7 @@ written by `scripts/site.sh`, says the same.
 | `glassine/` | our own software |
 | `forks/` | patched upstream software, renamed and installed beside the original (`sway-glassine` installs `/usr/bin/sway-glassine`, Alpine's `sway` stays), or an Alpine recipe rebuilt with our patches under Alpine's names (`mesa`); also one package of our own, `mesa-flatpak-glassine`, which ships the Flatpak GL extension bundles (see Flatpak GL extension below) |
 | `flatpak/` | Flatpak builds that devices get through a package here (see below) |
-| `scripts/` | build, pin, changed, docker-build and site (landing page) scripts, see Building and CI |
+| `scripts/` | build, pin, changed, docker-build, retain (which published versions stay) and site (landing page) scripts, see Building and CI |
 | `.github/` | the workflows (`build`, `publish`, `checksum`, `flatpak-gl`, `safety`) and `dependabot.yml` |
 
 A recipe directory has the name of its main package. Sources come from tags or pinned
@@ -78,9 +78,46 @@ architecture without a published repository, build them together).
   secret of the `release` environment, one approval per run), takes every other
   package from the live repository (its recipe must still exist), indexes, signs and
   deploys everything to GitHub Pages, with a landing page that `scripts/site.sh` writes
-  (key and repository line, see Using the repository). Only the newest version of each package stays.
+  (key and repository line, see Using the repository). Earlier versions stay for a while,
+  see Earlier versions.
   Needs the repository to be public (environments and Pages on private repositories
   need a paid plan).
+
+## Earlier versions
+
+GlassineOS/images installs the exact versions its locks (`stages/*/lock`) name, and
+only a lock refresh moves them, so a publish must not take a locked version away. The
+repository therefore keeps earlier versions beside the newest in the same signed
+`APKINDEX` (apk takes several versions of one name: `apk add name` installs the newest,
+`apk add name=version` that one). `scripts/retain.sh` decides, at each publish, per
+package name:
+
+- the newest version stays (as before, only while its recipe exists);
+- an earlier version stays for 30 days after a newer one replaced it;
+- a version that a lock of GlassineOS/images `main` names stays, whatever its age (the
+  publish job reads the locks from a fresh clone; if the clone fails, only the 30 days
+  hold, with a warning);
+- if everything together exceeds 900 MiB, replaced versions that no lock names go,
+  longest-replaced first; if the newest and the locked versions alone exceed it, the
+  publish fails.
+
+A version rebuilt under the same version string replaces the published file, as before.
+`scripts/test-retain.sh` checks the rule on made-up indexes (the `build` workflow runs it).
+
+Sizes, measured 2026-11-15: the site holds 49 packages, 97 MiB. The largest are
+`mesa-flatpak-glassine` (47 MiB per version), `linux-glassine-sdm660` (22 MiB) and
+`mesa` (12 MiB); everything else is under 6 MiB a recipe. In the 30 days before,
+`glassine-shell` (3 MiB) had 19 versions, `mesa-flatpak-glassine` 3, `sway-glassine` and
+`wvkbd-glassine` 7, `glassine-deploy` and `device-onyx-noteair` 13 (both tiny), and
+`publish` succeeded up to 16 times a day. At that rate the replaced versions add about
+165 MiB (two `mesa-flatpak-glassine` and eighteen `glassine-shell` versions are most of
+it), so the site settles near 260 MiB. GitHub Pages limits a site to 1 GB (hence the
+cap) and has a soft bandwidth limit of 100 GB a month: a publish that downloaded the
+whole site each time would use about 4 GB a day, so the publish job keeps the last
+publish's packages in an Actions cache (`work/published`, with its `APKINDEX.tar.gz`)
+and downloads only when that index is not the one Pages serves (a failed deploy, an
+evicted cache). A Pages deployment times out after 10 minutes; the deploy step waits up
+to 20 for the file sync, which grows with the site.
 
 ## Flatpak GL extension
 

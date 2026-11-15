@@ -7,8 +7,8 @@
 pkgname=glassine-handwriting
 pkgver=0_git20261115
 # GlassineOS/handwriting main
-_commit=380d29aaa11f64ae579934329ba1bb7f1876aa47
-pkgrel=3
+_commit=ece94259141dae0ac598f01ab55a4a3dafe5262d
+pkgrel=4
 pkgdesc="GlassineOS handwriting recognizer"
 url="https://github.com/GlassineOS/handwriting"
 arch="all"
@@ -43,5 +43,5 @@ samples() {
 }
 
 sha512sums="
-598788dd28887c01ef9968c8ff14d7a0cb37715212d7ad752e75cac881e0cc33ad5d064a04ae513d652339d19da83e049e93a3e6e072f7b582f2083c1f683f84  handwriting-380d29aaa11f64ae579934329ba1bb7f1876aa47.tar.gz
+b46a325a9bd672b0a4e8bdc39d9b79b596248dff40b775e86e954ee97432af92298aa57f5c79727b904d33272e61e843dd0c3cfa37fca364880070a18c065a86  handwriting-ece94259141dae0ac598f01ab55a4a3dafe5262d.tar.gz
 "

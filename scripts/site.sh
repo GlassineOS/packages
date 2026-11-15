@@ -16,6 +16,8 @@ GlassineOS images already use it. On another Alpine v3.24 system, put the
 <a href="keys/">signing key</a> into <code>/etc/apk/keys/</code> and add this line to
 <code>/etc/apk/repositories</code>:</p>
 <pre>https://pkgs.glassine.org/alpine/v3.24/glassine</pre>
+<p>apk adds the architecture itself: <code>aarch64</code> (everything GlassineOS has) or
+<code>x86_64</code> (the few packages PCs take from here; the rest comes from Alpine).</p>
 <p>After that, the <code>glassine-keys</code> package keeps both up to date.</p>
 <p>Sources and build recipes: <a href="https://github.com/GlassineOS/packages">GlassineOS/packages</a>.</p>
 HTML

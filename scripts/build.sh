@@ -6,15 +6,18 @@
 #   scripts/build.sh [--merge URL [--locks FILE] [--cache DIR]] DIR...
 #                                              e.g. device/linux-glassine-sdm660
 #
+# The architecture is the container's (one repository directory per run).
 # Output: out/alpine/<branch>/glassine/<arch>/ with *.apk and a signed APKINDEX.
 # Signing: ABUILD_PRIVKEY (PEM) must match one of keys/glassine-keys/*.rsa.pub; without
 # it an ephemeral key signs (a check build, never published).
 # --merge URL: also take the packages of the published repository at URL that
 # scripts/retain.sh keeps (the publish job; Pages replaces the whole site, so each
 # deploy must carry everything): the newest version of each package whose recipe still
-# exists, earlier versions for 30 days after they were replaced, and every version a
-# lock line in FILE (--locks, GlassineOS/images' stages/*/lock) names. Paths are
-# relative to /src.
+# is published for this architecture (scripts/changed.sh --arch), earlier versions for
+# 30 days after they were replaced, and every version a lock line in FILE (--locks,
+# GlassineOS/images' stages/*/lock or lock.<arch>) names, within CAP bytes (env,
+# scripts/retain.sh). Paths are relative to /src. With --merge, DIR may be left out:
+# the run builds nothing and carries the published repository forward.
 # --cache DIR: the packages of the last publish (with its APKINDEX.tar.gz), used instead
 # of downloading when that index is the one published at URL; refreshed at the end.
 set -eu
@@ -29,7 +32,7 @@ while :; do
 	*) break ;;
 	esac
 done
-[ $# -gt 0 ] || { echo "usage: $0 [--merge URL [--locks FILE] [--cache DIR]] DIR..." >&2; exit 2; }
+[ $# -gt 0 ] || [ -n "$merge" ] || { echo "usage: $0 [--merge URL [--locks FILE] [--cache DIR]] DIR..." >&2; exit 2; }
 
 cd /src
 arch=$(apk --print-arch)
@@ -93,7 +96,8 @@ rm -rf "$out"
 mkdir -p "$out"
 find "$home/repo" -name '*.apk' -path "*/$arch/*" -exec cp {} "$out/" \;
 # name version size of each package built now
-built=$(cd "$out" && for f in *.apk; do
+built=
+[ $# = 0 ] || built=$(cd "$out" && for f in *.apk; do
 	tar -xzOf "$f" .PKGINFO 2>/dev/null | awk -v s="$(stat -c %s "$f")" \
 		'/^pkgname = /{p=$3} /^pkgver = /{v=$3} END{print p, v, s}'
 done)
@@ -116,9 +120,9 @@ if [ -n "$merge" ]; then
 			}
 			print p, v, o, t + 0, s + 0
 		}' > "$tmp/live"
-		printf '%s\n' "$built" > "$tmp/built"
+		if [ -n "$built" ]; then printf '%s\n' "$built" > "$tmp/built"; else : > "$tmp/built"; fi
 		if [ -n "$locks" ]; then cp "$locks" "$tmp/locks"; else : > "$tmp/locks"; fi
-		for f in ./*/*/APKBUILD; do basename "$(dirname "$f")"; done > "$tmp/recipes"
+		sh scripts/changed.sh --arch "$arch" all | while read -r d; do basename "$d"; done > "$tmp/recipes"
 		sh scripts/retain.sh "$tmp/live" "$tmp/built" "$tmp/locks" "$tmp/recipes" > "$tmp/keep"
 		usecache=
 		if [ -n "$cache" ] && cmp -s "$cache/APKINDEX.tar.gz" "$tmp/APKINDEX.tar.gz"; then

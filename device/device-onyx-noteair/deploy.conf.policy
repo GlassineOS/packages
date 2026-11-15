@@ -1,0 +1,23 @@
+# glassine-deploy on the Onyx Boox Note Air: the settings that are this package's
+# choice, not device facts (every key: /usr/share/glassine-boot/deploy.conf.example).
+# The build puts the device facts derived from the description
+# (/usr/share/glassine/deploy.conf.device) before these lines, into
+# /etc/glassine/deploy.conf. Never set SYSTEM_DEV, USERDATA_DEV or
+# USERDATA_RESERVE_KIB here: the check fails.
+SYSTEM_MNT=/run/glassine/system
+USERDATA_MNT=/run/glassine/userdata
+# the directory on userdata; the initramfs's board.conf has the same
+USERDATA_PREFIX=media/glassine
+RUN_DIR=/run/glassine
+# the shutdown switch without a charger: at this battery percent or more
+# (provisional, until the device's power measurements set it)
+SWITCH_MIN_CAPACITY=30
+# a candidate is accepted after 2 minutes up and healthy (health.d)
+ACCEPT_AFTER=120
+ACCEPT_HEALTH_DIR=/etc/glassine-bootimg/health.d
+# both boot loader slots stay marked successful on this device: no slot tool
+SLOT_TOOL=
+# hibernation: a 1.5 GiB swap file under USERDATA_PREFIX/swap/
+HIBERNATE_SIZE_MB=1536
+HIBERNATE_RESERVE_MB=512
+HIBERNATE_HOOKS=/etc/glassine/hibernate.d

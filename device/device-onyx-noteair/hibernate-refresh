@@ -1,0 +1,9 @@
+#!/bin/sh
+# Hibernation hook (glassine-hibernate, post): the panel kept the boot logo
+# while the machine was off, and the panel daemon still believes it shows the
+# desktop. One full refresh after the restore.
+[ "$1" = post ] || exit 0
+CTL=/run/glassine-epdd-desktop.ctl
+# a FIFO: never hold the restore up on it
+[ -p "$CTL" ] && timeout 2 sh -c "echo full > $CTL"
+exit 0

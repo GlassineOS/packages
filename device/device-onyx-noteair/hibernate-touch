@@ -1,0 +1,17 @@
+#!/bin/sh
+# Hibernation hook (glassine-hibernate, pre/post): the touch controller is
+# power-cycled while the machine is off. Its driver resumes with a short power
+# command, but a cold chip needs the reset and start-up of the probe and holds
+# its interrupt line asserted until then. Detach the driver before the
+# hibernation and attach it again after.
+DEV=0-0024 DRV=/sys/bus/i2c/drivers/cyttsp5 MARK=/run/glassine-hibernate-touch
+case $1 in
+pre)
+    [ -e "$DRV/$DEV" ] || exit 0
+    echo "$DEV" > "$DRV/unbind" && : > "$MARK" ;;
+post)
+    [ -e "$MARK" ] || exit 0
+    rm -f "$MARK"
+    [ -e "$DRV/$DEV" ] || echo "$DEV" > "$DRV/bind" ;;
+esac
+exit 0

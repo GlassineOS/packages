@@ -1,0 +1,28 @@
+#!/bin/sh
+# Hibernation hook (glassine-hibernate, pre/post): the WiFi firmware does not
+# answer after a restore on a machine that was off (its QMI configuration times
+# out). Detach the driver before the hibernation and attach it again after, in
+# the background once the modem (the other half of the WLAN firmware) runs
+# again: a bind before that comes up only half way.
+DEV=18800000.wifi DRV=/sys/bus/platform/drivers/ath10k_snoc MARK=/run/glassine-hibernate-wifi
+MODEM=4080000.remoteproc
+case $1 in
+pre)
+    [ -e "$DRV/$DEV" ] || exit 0
+    echo "$DEV" > "$DRV/unbind" && : > "$MARK" ;;
+post)
+    [ -e "$MARK" ] || exit 0
+    rm -f "$MARK"
+    m=$(grep -lx "$MODEM" /sys/class/remoteproc/*/name 2>/dev/null | head -n 1)
+    (
+        if [ -n "$m" ]; then
+            m=${m%/name} i=0
+            while [ "$(cat "$m/state" 2>/dev/null)" != running ] && [ $i -lt 60 ]; do
+                sleep 1; i=$((i + 1))
+            done
+        fi
+        [ -e "$DRV/$DEV" ] || echo "$DEV" > "$DRV/bind"
+    ) </dev/null >/dev/null 2>&1 &
+    ;;
+esac
+exit 0

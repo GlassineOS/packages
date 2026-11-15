@@ -1,0 +1,16 @@
+#!/bin/sh
+# Hibernation hook (glassine-hibernate, pre/post): the Bluetooth UART (serdev,
+# hci_uart_qca) stays open while its driver is bound, and a restore after the
+# machine was off resumes the open port on cold hardware and hangs the bus.
+# Detach the driver before the hibernation and attach it again after.
+DEV=serial0-0 DRV=/sys/bus/serial/drivers/hci_uart_qca MARK=/run/glassine-hibernate-bt
+case $1 in
+pre)
+    [ -e "$DRV/$DEV" ] || exit 0
+    echo "$DEV" > "$DRV/unbind" && : > "$MARK" ;;
+post)
+    [ -e "$MARK" ] || exit 0
+    rm -f "$MARK"
+    [ -e "$DRV/$DEV" ] || echo "$DEV" > "$DRV/bind" ;;
+esac
+exit 0

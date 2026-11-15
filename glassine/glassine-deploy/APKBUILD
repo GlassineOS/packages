@@ -9,10 +9,12 @@
 # /usr/share/glassine/device-data.list, boot's docs/kernel-artifacts.md) and developer
 # mode (glassine-devmode: USB networking and SSH with glassine.devmode=usb, boot's
 # README). The image links the seed into sysinit and developer mode into default.
+# glassine-hibernate-setup (default) creates the hibernate swap file the device's
+# deploy.conf asks for.
 pkgname=glassine-deploy
-pkgver=0.4.6
+pkgver=0.4.7
 # GlassineOS/boot main
-_commit=9873ceb2bc5eceb7dfc39703bbaef4da75571626
+_commit=3ab5ecd18df85a9fefc7dce7ca16138e4e2ebb4f
 pkgrel=0
 pkgdesc="GlassineOS deployments: read-only bases, tried updates, reset, hibernation"
 url="https://github.com/GlassineOS/boot"
@@ -39,7 +41,8 @@ package() {
 		glassine-device-seed glassine-devmode; do
 		install -Dm755 sbin/$f "$pkgdir"/usr/sbin/$f
 	done
-	for f in glassine-switch glassine-mount-ro glassine-deploy-accept glassine-device-seed glassine-devmode; do
+	for f in glassine-switch glassine-mount-ro glassine-deploy-accept glassine-device-seed glassine-devmode \
+		glassine-hibernate-setup; do
 		install -Dm755 openrc/$f "$pkgdir"/etc/init.d/$f
 	done
 	ln -s glassine "$pkgdir"/usr/sbin/apk
@@ -54,5 +57,5 @@ package() {
 	install -d "$pkgdir"/etc/glassine-bootimg/health.d "$pkgdir"/etc/glassine/hibernate.d
 }
 sha512sums="
-5a94d58c141c489482b468a410a8720f2e931ee9619876d64cd543a7279e3ea48ce7b991c953c6a20af02e14c36e785f8b05a37e75a60532ee6b0432aa77260c  boot-9873ceb2bc5eceb7dfc39703bbaef4da75571626.tar.gz
+82bf5046cb1875f4f05545e2fcc4fac125b973f8d47231f4e3c7e5a7127f2e029d3c7d6b2e018f51cc1754c1269f3518c28c67803e639ec9e606287f2d89ed0a  boot-3ab5ecd18df85a9fefc7dce7ca16138e4e2ebb4f.tar.gz
 "

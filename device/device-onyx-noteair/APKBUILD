@@ -14,7 +14,8 @@
 # networkmanager-wlan.conf: a stable WiFi MAC (the chip gives the driver none).
 # migrate.list: the state an update carries (the Bluetooth address, the clock offset).
 # glassine-powerd: the sleep policy (power key, cover, idle; sticky sleep with WiFi
-# and Bluetooth off), hibernation (the Power popup's Hibernate, hibernate_after_min)
+# and Bluetooth off), hibernation (the Power popup's Hibernate; hibernate_after_min,
+# three days of sleep by default)
 # and the front light, also the managed one (power.conf).
 # hibernate-*: glassine-hibernate's hooks for this board (/etc/glassine/hibernate.d,
 # run in name order before the hibernation, in reverse after it): drivers that a
@@ -511,7 +512,7 @@ ce8889318d8f4d60eb097ae77eaf68f3e1b49a2eb6abad264567b2672761f4b0d1a0202dd81df568
 0ced78962b82861f687eca9f68411b79e7c9994579a669c11ca4814b109c0243d805a0510a5402efee82beda5556dca8a53bff7f9fcf2e7eb16c1f2619c2eaf2  glassine-clock.initd
 35fabd4c4f1f6d5bd28fd1a0b0502e8dc969502ecddfdbd792338ed812ef867f5b893ab7c3bc5d3d63bbffcc0d1b570f8f2b19ff3c9142fe12e2f244b649ab34  glassine-clock.nm-dispatcher
 5946fc2ce4e8311e5be331a9c9bd305942340436bb4c7864e101365f633342f0b56c7a26a0e6453cfeff46dfb3a0c99db0a0f6c40f541e1562a1ed44338ce3d5  glassine-ddr
-3ae28eb901517c27b7f98f6fd1ac13001dbd6f75a6550e8467f0a0e893951c722436e54460b493c003d19e75d324fb9d26dd86c61498d426b84df7b1c526f3a1  glassine-powerd.c
+b3644efaf90375cc455022d50d7920c078297cfa05d1b3cd430df17761c968669abe89fe7c8709a75813aa8044880d4dc6fae653810d2246c6695f6d468be015  glassine-powerd.c
 ebad1a3c0674d587a22c037b89d4cb2ce6d717ac96158cc84dd4c92e1076168ae3b7c05d9b1a8b316f6b524322602ce8f0dc33b5daaa94e710cf33ff4eb7765a  glassine-powerd.initd
 1f3f012fcfebda0093884eb3e7e6ecef835268f3b5a7646bf4690aa8970cefd4b7641fa64d36e86664ec31c098823acd22ed3ae6a453c0dce4ca0f08a66395af  glassine-session.confd
 5fa5ae86cbb297ce05fb06b34048d2c86796cc312a314eba1e24558b7d8f5ef0e7c119a29379e58b6d87cb8797776d58d75828d9d2dd163acb55857f7dbf5fb9  glassine-splash.initd

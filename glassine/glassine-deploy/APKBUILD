@@ -14,9 +14,9 @@
 # image made by `glassine-deploy init --install-marker`) into a normal one on its first,
 # bare boot: grows the system partition, formats userdata, selects the first deployment.
 pkgname=glassine-deploy
-pkgver=0.5.0
+pkgver=0.5.1
 # GlassineOS/boot main
-_commit=2b6cb72d5ec555b3713e8ba2b3d53aa5118331fe
+_commit=68288a2b8c5049b57dac8d3358aef8d81d965050
 pkgrel=0
 pkgdesc="GlassineOS deployments: read-only bases, tried updates, reset, hibernation"
 url="https://github.com/GlassineOS/boot"
@@ -60,5 +60,5 @@ package() {
 	install -d "$pkgdir"/etc/glassine-bootimg/health.d "$pkgdir"/etc/glassine/hibernate.d
 }
 sha512sums="
-a15090b83833048c3fab91241d9bd5a64fdc1e6fb9bab65f8590f6e0f140055036b5fa3cd358c45347e990f4f776c3a3907cb091bd11a20e22e112541c67bfae  boot-2b6cb72d5ec555b3713e8ba2b3d53aa5118331fe.tar.gz
+f1139aacb9a310f7c3f76b958b00f92484567a7cabdeec99cbf50146aaae34605e519f4e3cb46f8175bfb5bdc574b042aea770533509e1c7e83285f11dd8e1bf  boot-68288a2b8c5049b57dac8d3358aef8d81d965050.tar.gz
 "

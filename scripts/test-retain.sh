@@ -1,7 +1,8 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Host test of scripts/retain.sh on made-up indexes (no network, no container).
-#   scripts/test-retain.sh     exit 0 = all checks pass
+#   scripts/test-retain.sh     exit 0 = all checks pass (CI runs it in alpine:3.24, as
+#   the publish runs retain.sh there: busybox awk)
 set -eu
 P=$(cd "$(dirname "$0")/.." && pwd)
 T=$(mktemp -d)

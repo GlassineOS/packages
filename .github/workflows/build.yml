@@ -27,7 +27,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
-      - run: sh scripts/test-retain.sh
+      # in the container the publish uses (busybox awk)
+      - run: docker run --rm -v "$PWD:/src:ro" alpine:3.24 sh /src/scripts/test-retain.sh
   build:
     if: github.ref != 'refs/heads/main' || github.event_name != 'push' || github.event.repository.private
     runs-on: ubuntu-24.04-arm

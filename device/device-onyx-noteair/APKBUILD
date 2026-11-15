@@ -6,8 +6,11 @@
 # /usr/share/glassine/device.toml; the files that state them are derived from it here at
 # the build, never written by hand (FR-030): device-data.list names the device's own
 # files (waveform, firmware) for the seed of GlassineOS/boot (in glassine-deploy: the
-# seed service and the initramfs read it), and slots.conf names Android's slot for the
-# power menu.
+# seed service and the initramfs read it), slots.conf names Android's slot for the
+# power menu, and deploy.conf.device holds glassine-deploy's device facts (the system
+# and data partitions, the space kept free at the data partition's end for Android's
+# encryption footer). /etc/glassine/deploy.conf is assembled at the build from those
+# facts and this package's own settings (deploy.conf.policy).
 # networkmanager-wlan.conf: a stable WiFi MAC (the chip gives the driver none).
 # migrate.list: the state an update carries (the Bluetooth address, the clock offset).
 # glassine-powerd: the sleep policy (power key, cover, idle; sticky sleep with WiFi
@@ -17,7 +20,7 @@
 # (with its modprobe.d file and the speaker and microphone routing).
 pkgname=device-onyx-noteair
 pkgver=4
-pkgrel=5
+pkgrel=6
 builddir="$srcdir"
 pkgdesc="Onyx Boox Note Air: system services, device data list, modem, radios and sound"
 url="https://github.com/GlassineOS/packages"
@@ -36,6 +39,7 @@ _installer=9f578b8b27988b3043527658c3d719d75b10e36c
 depends="busybox glassine-deploy>=0.4.0 glassine-epdd glassine-slot
 	alsa-utils bluez-btmgmt qrtr qrtr-diag-sink rmtfs tqftpserv"
 source="installer-$_installer.tar.gz::https://github.com/GlassineOS/installer/archive/$_installer.tar.gz
+	deploy.conf.policy
 	epd.conf
 	glassine-clock
 	glassine-clock.initd
@@ -69,15 +73,24 @@ prepare() {
 build() {
 	# the derived files, never a hand-written copy next to this APKBUILD (FR-030)
 	local f
-	for f in device-data.list slots.conf; do
+	for f in device-data.list slots.conf deploy.conf.device deploy.conf; do
 		[ ! -e "$startdir/$f" ] || { echo "$f is derived from the description: remove $startdir/$f"; return 1; }
 	done
 	(cd "$_inst" && cargo build --frozen --release -p glassine-device-files)
 	rm -rf "$srcdir/derived"; mkdir "$srcdir/derived"
 	"$_inst"/target/release/glassine-device-files "$_inst"/devices/onyx-noteair.toml "$srcdir/derived"
-	for f in device-data.list slots.conf; do
+	for f in device-data.list slots.conf deploy.conf.device; do
 		[ -f "$srcdir/derived/$f" ] || { echo "the description derives no $f"; return 1; }
 	done
+	# glassine-deploy's configuration: the derived facts, then this package's settings
+	{
+		echo "# glassine-deploy's configuration (keys: /usr/share/glassine-boot/deploy.conf.example),"
+		echo "# assembled when device-onyx-noteair is built: the device facts from its description,"
+		echo "# then the package's own settings."
+		cat "$srcdir/derived/deploy.conf.device"
+		echo
+		cat "$srcdir/deploy.conf.policy"
+	} > "$srcdir/deploy.conf"
 	${CC:-gcc} $CFLAGS -Wall -Wextra -Werror -o "$srcdir"/glassine-powerd "$srcdir"/glassine-powerd.c $LDFLAGS -lm
 	# the splash: a white page at the panel's size (portrait, 8-bit grey)
 	{ printf 'P5\n1404 1872\n255\n'; head -c $((1404 * 1872)) /dev/zero | tr '\0' '\377'; } > "$srcdir"/splash.pgm
@@ -129,10 +142,30 @@ check() {
 	_check_powerd "$t" || return 1
 	_check_list "$srcdir/derived/device-data.list" || return 1
 	grep -qx 'ANDROID_SLOT=[ab]' "$srcdir/derived/slots.conf" || { echo "slots.conf: no ANDROID_SLOT"; return 1; }
+	_check_deploy_conf || return 1
 	# the migrate list: absolute paths only (glassine-deploy drops the others)
 	! grep -v -e '^#' -e '^$' "$srcdir"/migrate.list | grep -qv '^/' || { echo "migrate.list: not an absolute path"; return 1; }
 	_check_health "$t/health" || return 1
 	_check_bringup "$t/bringup"
+}
+
+# deploy.conf: the facts once each, from the description only, every key once, and it
+# reads as glassine-deploy sources it
+_check_deploy_conf() {
+	local c="$srcdir/deploy.conf" k
+	sh -n "$c" || { echo "deploy.conf: not shell"; return 1; }
+	! grep -qE '^(SYSTEM_DEV|USERDATA_DEV|USERDATA_RESERVE_KIB)=' "$srcdir/deploy.conf.policy" \
+		|| { echo "deploy.conf.policy: sets a device fact (the description's)"; return 1; }
+	k=$(grep -E '^[A-Z0-9_]+=' "$c" | cut -d= -f1 | sort | uniq -d)
+	[ -z "$k" ] || { echo "deploy.conf: set twice: $k"; return 1; }
+	(
+		SYSTEM_DEV='' USERDATA_DEV='' USERDATA_RESERVE_KIB=''
+		. "$c"
+		case $SYSTEM_DEV in /dev/disk/by-partlabel/?*) ;; *) echo "deploy.conf: SYSTEM_DEV=$SYSTEM_DEV"; exit 1 ;; esac
+		case $USERDATA_DEV in /dev/disk/by-partlabel/?*) ;; *) echo "deploy.conf: USERDATA_DEV=$USERDATA_DEV"; exit 1 ;; esac
+		case $USERDATA_RESERVE_KIB in ''|*[!0-9]*) echo "deploy.conf: USERDATA_RESERVE_KIB=$USERDATA_RESERVE_KIB"; exit 1 ;; esac
+		[ "$SYSTEM_DEV" != "$USERDATA_DEV" ] || { echo "deploy.conf: the system and data partitions are one"; exit 1; }
+	) || return 1
 }
 
 # the clock service's start with OpenRC's functions stood in (date only records)
@@ -435,6 +468,8 @@ package() {
 	install -Dm644 "$srcdir"/derived/device-data.list "$pkgdir"/usr/share/glassine/device-data.list
 	install -Dm644 "$srcdir"/epd.conf "$pkgdir"/etc/glassine/epd.conf
 	install -Dm644 "$srcdir"/derived/slots.conf "$pkgdir"/etc/glassine/slots.conf
+	install -Dm644 "$srcdir"/derived/deploy.conf.device "$pkgdir"/usr/share/glassine/deploy.conf.device
+	install -Dm644 "$srcdir"/deploy.conf "$pkgdir"/etc/glassine/deploy.conf
 	install -Dm755 "$srcdir"/waveform.health "$pkgdir"/etc/glassine-bootimg/health.d/50-waveform
 	install -Dm755 "$srcdir"/glassine-clock.initd "$pkgdir"/etc/init.d/glassine-clock
 	install -Dm755 "$srcdir"/glassine-splash.initd "$pkgdir"/etc/init.d/glassine-splash
@@ -453,6 +488,7 @@ package() {
 }
 sha512sums="
 4db956ffbf0602b6f3e28200393e4a2bbaefab4557eaed7745dc92753a11993e9a263ad58b81041c9fc7070c1a9cbe7f6db5d27dcc38fc51cb0ca66a0834b6c6  installer-9f578b8b27988b3043527658c3d719d75b10e36c.tar.gz
+a7f981b0c35bacfd4a06c67b272c5d75dcc6efb9ff9eabcd344f39bd3e39e82ff5ae9c1dd716f3b5520b3cf62efaa851e3666e97d264777fb10dbe44cf74a741  deploy.conf.policy
 ce8889318d8f4d60eb097ae77eaf68f3e1b49a2eb6abad264567b2672761f4b0d1a0202dd81df56891fba3084883cada6980d5594ea0a332622cb5d445a34cb0  epd.conf
 9706b48fca84aa8f0714f30994c648264612bdd078a21a51c9dbd5195445e2f3654068532c07818e9606e881c31a9820000a8dce7085dc00e9e69af1ef85abc1  glassine-clock
 0ced78962b82861f687eca9f68411b79e7c9994579a669c11ca4814b109c0243d805a0510a5402efee82beda5556dca8a53bff7f9fcf2e7eb16c1f2619c2eaf2  glassine-clock.initd

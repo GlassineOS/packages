@@ -13,6 +13,12 @@
  * growing pause and logs the active wakeup sources.
  * wifi_off_after_min > 0 keeps WiFi through short sleeps: an RTC alarm wakes us
  * after that long, WiFi goes off, and back to sleep.
+ * Hibernation (GlassineOS/boot glassine-hibernate): SIGUSR2 (the Power popup's
+ * Hibernate) draws the pill as "Hibernating", turns the light and radios off and
+ * runs `glassine-hibernate now`, which powers the device off and returns when the
+ * session is resumed (or the kernel refused: then the page simply comes back).
+ * hibernate_after_min > 0: a sleep on battery that lasts that long ends in a
+ * hibernate (an RTC alarm wakes us for it); a refused hibernate keeps sleeping.
  * With USB connected the kernel refuses to suspend: not tried, and no idle
  * sleep then. No idle sleep either while an ALSA playback stream runs (music;
  * PipeWire closes the device ~5 s after the last sound) or while
@@ -22,6 +28,7 @@
  * glassine-settings and glassine-shell as the desktop user, group video):
  *   power_key=suspend|ignore   cover=suspend|ignore
  *   idle_sleep_min=N (0 = never)   wifi_off_after_min=N (0 = at once, -1 = never)
+ *   hibernate_after_min=N (0 = never: the default)
  *   light_br=0..28  light_ct=0..24  (front light, restored at start and on wake;
  *       no light_br: the light is left as it is at start)
  *   light_managed=0|1  (1: brightness and warmth follow the sun, see managed_tick)
@@ -37,6 +44,7 @@
  * paused for the sleep.
  *
  * SIGUSR1 = sleep now (the shell's Power popup, via glassine-power-root sleep).
+ * SIGUSR2 = hibernate now (the Power popup, via glassine-power-root hibernate).
  *
  * usage: glassine-powerd [-n]   (-n: log, do not suspend or switch radios)
  *        glassine-powerd -p     (print the configuration and the light it sets, then exit)
@@ -54,6 +62,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 #include <glob.h>
@@ -70,6 +79,7 @@ static const char *CONF = "/etc/glassine/power.conf";
 #define FL_WARM FL_A
 #define FL_COOL FL_B
 #define RTC_ALARM "/sys/class/rtc/rtc0/wakealarm"
+#define HIBERNATE "/usr/sbin/glassine-hibernate"
 #define LIGHT_RUN "/run/glassine-light"
 #define ZONEINFO "/usr/share/zoneinfo/"
 #define GRACE_MS 1500
@@ -80,7 +90,8 @@ static struct {
     int idle_min, wifi_after;
     int br, ct;
     int br_set;                     /* power.conf has light_br */
-} cf = { 1, 1, 10, 0, 0, 12, 0 };
+    int hib_after;                  /* minutes asleep before a hibernate, 0 = never */
+} cf = { 1, 1, 10, 0, 0, 12, 0, 0 };
 /* managed light: limits and offsets in %, the schedule's current value, and what is on */
 static struct { int on, bmin, bmax, wmin, wmax, boff, woff, b, w, br, ct; } lm = { 0, 20, 80, 10, 90, 0, 0, -1, -1, -1, -1 };
 #define LIGHT_FLOOR 5                   /* % (glassine-settings and glassine-shell keep the same) */
@@ -201,6 +212,7 @@ static void load_conf(int force)
         else if (!strcmp(k, "cover")) cf.cover = strcmp(v, "ignore") != 0;
         else if (!strcmp(k, "idle_sleep_min")) cf.idle_min = atoi(v);
         else if (!strcmp(k, "wifi_off_after_min")) cf.wifi_after = atoi(v);
+        else if (!strcmp(k, "hibernate_after_min")) cf.hib_after = atoi(v) > 0 ? atoi(v) : 0;
         else if (!strcmp(k, "light_br")) { cf.br = atoi(v); cf.br_set = 1; }
         else if (!strcmp(k, "light_ct")) cf.ct = atoi(v);
         else if (!strcmp(k, "light_managed")) lm.on = atoi(v) != 0;
@@ -212,8 +224,8 @@ static void load_conf(int force)
         else if (!strcmp(k, "light_w_off")) lm.woff = atoi(v) < -50 ? -50 : atoi(v) > 50 ? 50 : atoi(v);
     }
     fclose(f);
-    stamp(); fprintf(stderr, "config: power_key=%d cover=%d idle_sleep_min=%d wifi_off_after_min=%d light=%d/%d",
-                     cf.power_key, cf.cover, cf.idle_min, cf.wifi_after, cf.br, cf.ct);
+    stamp(); fprintf(stderr, "config: power_key=%d cover=%d idle_sleep_min=%d wifi_off_after_min=%d hibernate_after_min=%d light=%d/%d",
+                     cf.power_key, cf.cover, cf.idle_min, cf.wifi_after, cf.hib_after, cf.br, cf.ct);
     if (lm.on) fprintf(stderr, " managed b %d-%d%+d w %d-%d%+d", lm.bmin, lm.bmax, lm.boff, lm.wmin, lm.wmax, lm.woff);
     fprintf(stderr, "\n");
 }
@@ -523,27 +535,76 @@ static void sensors_resume(unsigned on)
     }
 }
 
-/* one user-level sleep: lasts until a user wakeup (or USB, or failure) */
-static void do_sleep(const char *why)
+/* the pill's frames on the panel before the system freezes: reading
+ * wakeup_count blocks while glassine-epdd-desktop still holds its wakeup source
+ * (bounded by WC_WAIT_S); a hibernate's freeze would be refused while it does */
+static void wait_wakeups(void)
 {
-    if (usb_online()) {
+    if (dry) return;
+    int wc = open("/sys/power/wakeup_count", O_RDONLY);
+    if (wc < 0) { usleep(1200000); return; }
+    struct sigaction sa = { .sa_handler = on_alarm }, was;
+    sigaction(SIGALRM, &sa, &was);
+    alarm(WC_WAIT_S);
+    char b[32];
+    if (read(wc, b, sizeof b) <= 0) { stamp(); fprintf(stderr, "hibernate: wakeup sources still active after %d s\n", WC_WAIT_S); }
+    alarm(0);
+    sigaction(SIGALRM, &was, NULL);
+    close(wc);
+}
+
+/* glassine-hibernate now: 0 = the session came back from a hibernate */
+static int hibernate_now(void)
+{
+    if (dry) { stamp(); fprintf(stderr, "hibernate (dry run)\n"); sleep(3); return 0; }
+    if (access(HIBERNATE, X_OK)) { stamp(); fprintf(stderr, "hibernate: no %s\n", HIBERNATE); return -1; }
+    wait_wakeups();
+    sync();
+    stamp(); fprintf(stderr, "hibernating\n");
+    int rc = system(HIBERNATE " now");
+    rc = rc == -1 ? -1 : WIFEXITED(rc) ? WEXITSTATUS(rc) : -1;
+    stamp();
+    if (rc == 0) fprintf(stderr, "resumed from hibernation\n");
+    else fprintf(stderr, "hibernate refused or failed (glassine-hibernate exit %d)\n", rc);
+    return rc == 0 ? 0 : -1;
+}
+
+/* the RTC alarm for the next of the sleep's deadlines (0 = none): relative, the
+ * PMIC RTC is read-only and far from system time. 0 = armed (or none needed) */
+static int arm_alarm(time_t a, time_t b)
+{
+    time_t at = a && b ? (a < b ? a : b) : a ? a : b;
+    wr(RTC_ALARM, "0");
+    if (!at) return 0;
+    char buf[32];
+    long in = (long)(at - time(NULL));
+    snprintf(buf, sizeof buf, "+%ld", in > 1 ? in : 1);
+    return wr(RTC_ALARM, buf);
+}
+
+/* one user-level sleep: lasts until a user wakeup (or USB, or failure);
+ * hib: hibernate at once (the Power popup) instead of a suspend */
+static void do_sleep(const char *why, int hib)
+{
+    if (!hib && usb_online()) {
         stamp(); fprintf(stderr, "%s: USB connected, suspend impossible, ignored\n", why);
         return;
     }
-    stamp(); fprintf(stderr, "sleep (%s)\n", why);
+    stamp(); fprintf(stderr, "%s (%s)\n", hib ? "hibernate" : "sleep", why);
     int handshake = !dry;
     int wifi_was = wifi_on(), wifi_is = wifi_was, bt_was = bt_on();
     /* the sleep pill: the shell's theme, the screen's turn and the time;
      * glassine-epdd-desktop draws it over the page, else its plain bar */
     unlink(SLEEP_PILL);
     if (access(SLEEP_PILL_BIN, X_OK) == 0 &&
-        system("timeout 3 " SLEEP_PILL_BIN " " SLEEP_PILL " >/dev/null 2>&1") != 0) {
+        system(hib ? "timeout 3 " SLEEP_PILL_BIN " -m hibernate " SLEEP_PILL " >/dev/null 2>&1"
+                   : "timeout 3 " SLEEP_PILL_BIN " " SLEEP_PILL " >/dev/null 2>&1") != 0) {
         stamp(); fprintf(stderr, "sleep pill: renderer failed, the bar instead\n");
     }
     epdd("sleep\n");
     light(0);
     if (bt_was) bt_set(0);
-    if (wifi_is && cf.wifi_after == 0 && !dry) { wifi_set(0); wifi_is = 0; }
+    if (wifi_is && (cf.wifi_after == 0 || hib) && !dry) { wifi_set(0); wifi_is = 0; }
     /* the banner GC16 must be on the panel before the system freezes, else its
      * queued frames go out at resume and the banner only flashes on wake.
      * glassine-epdd-desktop holds a wakeup source while frames are queued, and
@@ -552,25 +613,26 @@ static void do_sleep(const char *why)
     if (!handshake || access("/sys/power/wake_lock", F_OK)) usleep(1200000);
     sync();
 
-    time_t t0 = time(NULL), alarm_at = 0;
+    time_t t0 = time(NULL), alarm_at = 0, hib_at = 0;
     long p0 = capacity(), v0 = batt_mv();
     struct sstat vmin0 = sleep_stat("vmin"), vlow0 = sleep_stat("vlow");
     usb_detach();
     unsigned sensors = dry ? 0 : sensors_pause();
-    if (wifi_is && cf.wifi_after > 0) {
-        char b[32];
-        alarm_at = t0 + cf.wifi_after * 60;
-        wr(RTC_ALARM, "0");
-        /* relative: the PMIC RTC is read-only and far from system time */
-        snprintf(b, sizeof b, "+%d", cf.wifi_after * 60);
-        if (wr(RTC_ALARM, b) < 0) { stamp(); fprintf(stderr, "no RTC alarm: wifi off now\n"); wifi_set(0); wifi_is = 0; alarm_at = 0; }
+    if (wifi_is && cf.wifi_after > 0) alarm_at = t0 + cf.wifi_after * 60;
+    /* on battery only: with USB the kernel refuses the suspend anyway */
+    if (!hib && cf.hib_after > 0 && access(HIBERNATE, X_OK) == 0) hib_at = t0 + (time_t)cf.hib_after * 60;
+    if ((alarm_at || hib_at) && arm_alarm(alarm_at, hib_at) < 0) {
+        stamp(); fprintf(stderr, "no RTC alarm:%s%s\n", alarm_at ? " wifi off now" : "", hib_at ? " no hibernate" : "");
+        if (alarm_at) { wifi_set(0); wifi_is = 0; alarm_at = 0; }
+        hib_at = 0;
     }
     int wakes = 0, busy = 0;
+    if (hib) hibernate_now();           /* back (resumed or refused): the page again */
     /* against the counts from before the first suspend: a key press between two
      * attempts (during a pause after EBUSY) counts too */
     unsigned long c0[NWAKE], c1[NWAKE];
     irq_counts(c0);
-    for (;;) {
+    for (; !hib;) {
         int r = suspend_once(handshake && busy < 4);
         irq_counts(c1);
         int user = -1;
@@ -580,6 +642,14 @@ static void do_sleep(const char *why)
         if (alarm_at && time(NULL) >= alarm_at - 2) {
             stamp(); fprintf(stderr, "slept %d min: ", cf.wifi_after);
             wifi_set(0); wifi_is = 0; alarm_at = 0;
+            arm_alarm(0, hib_at);
+        }
+        if (hib_at && time(NULL) >= hib_at - 2) {
+            stamp(); fprintf(stderr, "slept %d min: hibernate\n", cf.hib_after);
+            hib_at = 0;
+            arm_alarm(alarm_at, 0);
+            if (hibernate_now() == 0) break;    /* resumed: a user wakeup (the power key) */
+            continue;                           /* refused: keep sleeping */
         }
         if (r < 0) {
             /* 1, 2, ... 10 s between attempts; the wakelock list at the 1st, 10th, ... */
@@ -593,7 +663,7 @@ static void do_sleep(const char *why)
          * handled; a repeated suspend right away tends to abort (EBUSY) */
         usleep(500000);
     }
-    if (alarm_at) wr(RTC_ALARM, "0");
+    if (alarm_at || hib_at) wr(RTC_ALARM, "0");
     time_t dt = time(NULL) - t0;
     long v1 = batt_mv();                /* before the USB/WiFi/light work loads the battery */
     struct sstat vmin1 = sleep_stat("vmin"), vlow1 = sleep_stat("vlow");
@@ -747,9 +817,11 @@ static int scan_inputs(struct dev *d)
     return n;
 }
 
-/* SIGUSR1: sleep now (the shell's Power popup: glassine-power-root sleep) */
-static volatile sig_atomic_t sleep_req;
+/* SIGUSR1: sleep now, SIGUSR2: hibernate now (the shell's Power popup:
+ * glassine-power-root sleep / hibernate) */
+static volatile sig_atomic_t sleep_req, hib_req;
 static void on_usr1(int s) { (void)s; sleep_req = 1; }
+static void on_usr2(int s) { (void)s; hib_req = 1; }
 
 int main(int argc, char **argv)
 {
@@ -764,6 +836,8 @@ int main(int argc, char **argv)
     }
     struct sigaction usr1 = { .sa_handler = on_usr1 };     /* poll returns EINTR */
     sigaction(SIGUSR1, &usr1, NULL);
+    struct sigaction usr2 = { .sa_handler = on_usr2 };
+    sigaction(SIGUSR2, &usr2, NULL);
     setup_perms();
     load_conf(1);
     managed_tick();
@@ -811,11 +885,13 @@ int main(int argc, char **argv)
             if (!no) go = "idle";
             else if (!idle_blocked) { idle_blocked = 1; stamp(); fprintf(stderr, "idle, no sleep: %s\n", no); }
         }
+        int hib = 0;
+        if (!go && hib_req) { go = "menu"; hib = 1; }
         if (!go && sleep_req) go = "menu";
-        sleep_req = 0;
+        sleep_req = hib_req = 0;
         if (go) {
-            do_sleep(go);
-            sleep_req = 0;
+            do_sleep(go, hib);
+            sleep_req = hib_req = 0;
             struct input_event ev[32];
             for (int i = 0; i < n; i++) while (read(d[i].fd, ev, sizeof ev) > 0) {}
             awake_since = last_input = now_ms();

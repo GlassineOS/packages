@@ -14,13 +14,19 @@
 # networkmanager-wlan.conf: a stable WiFi MAC (the chip gives the driver none).
 # migrate.list: the state an update carries (the Bluetooth address, the clock offset).
 # glassine-powerd: the sleep policy (power key, cover, idle; sticky sleep with WiFi
-# and Bluetooth off), hibernation (the Power popup's Hibernate, hibernate_after_min)
+# and Bluetooth off), hibernation (the Power popup's Hibernate; hibernate_after_min,
+# three days of sleep by default)
 # and the front light, also the managed one (power.conf).
+# hibernate-*: glassine-hibernate's hooks for this board (/etc/glassine/hibernate.d,
+# run in name order before the hibernation, in reverse after it): drivers that a
+# restore on hardware that was off can't resume are detached and attached again
+# (Bluetooth, WiFi once the modem runs, touch, the PMIC's ADC and temperature
+# alarms), and the panel gets one full refresh.
 # onyx-noteair-bringup brings up the modem, ADSP, WiFi, Bluetooth and the sound card
 # (with its modprobe.d file and the speaker and microphone routing).
 pkgname=device-onyx-noteair
 pkgver=4
-pkgrel=6
+pkgrel=7
 builddir="$srcdir"
 pkgdesc="Onyx Boox Note Air: system services, device data list, modem, radios and sound"
 url="https://github.com/GlassineOS/packages"
@@ -49,6 +55,11 @@ source="installer-$_installer.tar.gz::https://github.com/GlassineOS/installer/ar
 	glassine-powerd.initd
 	glassine-session.confd
 	glassine-splash.initd
+	hibernate-bluetooth
+	hibernate-pmic
+	hibernate-refresh
+	hibernate-touch
+	hibernate-wifi
 	hwclock.confd-shutdown
 	migrate.list
 	networkmanager-wlan.conf
@@ -101,7 +112,8 @@ check() {
 	for f in glassine-clock glassine-clock.initd glassine-clock.nm-dispatcher glassine-ddr \
 		glassine-powerd.initd glassine-session.confd \
 		glassine-splash.initd onyx-noteair-bringup onyx-noteair-bringup.initd \
-		onyx-noteair-tune.initd waveform.health; do
+		onyx-noteair-tune.initd waveform.health \
+		hibernate-bluetooth hibernate-pmic hibernate-refresh hibernate-touch hibernate-wifi; do
 		sh -n "$srcdir/$f" || return 1
 	done
 	t="$srcdir/t"; rm -rf "$t"; mkdir -p "$t/p" "$t/cg" "$t/pip"
@@ -485,6 +497,12 @@ package() {
 		"$pkgdir"/etc/NetworkManager/dispatcher.d/50-glassine-clock
 	install -Dm644 "$srcdir"/splash.pgm "$pkgdir"/usr/share/glassine/splash.pgm
 	install -Dm644 "$srcdir"/migrate.list "$pkgdir"/usr/share/glassine/migrate.d/device-onyx-noteair.list
+	local h=/etc/glassine/hibernate.d
+	install -Dm755 "$srcdir"/hibernate-bluetooth "$pkgdir"$h/10-bluetooth
+	install -Dm755 "$srcdir"/hibernate-wifi "$pkgdir"$h/15-wifi
+	install -Dm755 "$srcdir"/hibernate-touch "$pkgdir"$h/20-touch
+	install -Dm755 "$srcdir"/hibernate-pmic "$pkgdir"$h/30-pmic
+	install -Dm755 "$srcdir"/hibernate-refresh "$pkgdir"$h/90-refresh
 }
 sha512sums="
 71ecb2850e717a48a775ee13cf8d0e70d142e2a7d1efae5ef8d877904533cfca7fa91e36ff650029bf18dd358cbe7ad9843a2320b2f1876b93659f12a727a54c  installer-3d8a5949472a9ee9060681b2fc78741166649347.tar.gz
@@ -494,10 +512,15 @@ ce8889318d8f4d60eb097ae77eaf68f3e1b49a2eb6abad264567b2672761f4b0d1a0202dd81df568
 0ced78962b82861f687eca9f68411b79e7c9994579a669c11ca4814b109c0243d805a0510a5402efee82beda5556dca8a53bff7f9fcf2e7eb16c1f2619c2eaf2  glassine-clock.initd
 35fabd4c4f1f6d5bd28fd1a0b0502e8dc969502ecddfdbd792338ed812ef867f5b893ab7c3bc5d3d63bbffcc0d1b570f8f2b19ff3c9142fe12e2f244b649ab34  glassine-clock.nm-dispatcher
 5946fc2ce4e8311e5be331a9c9bd305942340436bb4c7864e101365f633342f0b56c7a26a0e6453cfeff46dfb3a0c99db0a0f6c40f541e1562a1ed44338ce3d5  glassine-ddr
-3ae28eb901517c27b7f98f6fd1ac13001dbd6f75a6550e8467f0a0e893951c722436e54460b493c003d19e75d324fb9d26dd86c61498d426b84df7b1c526f3a1  glassine-powerd.c
+b3644efaf90375cc455022d50d7920c078297cfa05d1b3cd430df17761c968669abe89fe7c8709a75813aa8044880d4dc6fae653810d2246c6695f6d468be015  glassine-powerd.c
 ebad1a3c0674d587a22c037b89d4cb2ce6d717ac96158cc84dd4c92e1076168ae3b7c05d9b1a8b316f6b524322602ce8f0dc33b5daaa94e710cf33ff4eb7765a  glassine-powerd.initd
 1f3f012fcfebda0093884eb3e7e6ecef835268f3b5a7646bf4690aa8970cefd4b7641fa64d36e86664ec31c098823acd22ed3ae6a453c0dce4ca0f08a66395af  glassine-session.confd
 5fa5ae86cbb297ce05fb06b34048d2c86796cc312a314eba1e24558b7d8f5ef0e7c119a29379e58b6d87cb8797776d58d75828d9d2dd163acb55857f7dbf5fb9  glassine-splash.initd
+de58e90acf2ab20e465f482f65938a652b4db54fba41a64c375ed527cec5fb832961b1eee907267a7de9fb6be430c6c5c1d6daf422be9a978bcf6b064c1c34e5  hibernate-bluetooth
+02dab5d7abfd802e4f318b4fe197f7da9c5809d28a40cfc7d913a3b668da4633fd3893cc8875ea54edbcf672682d2dccf6500efc93070186068d79f8be279608  hibernate-pmic
+d5e2d50166edd399341a1f0addf9875a6e50a41de4a69872b0abb29150dd0f6d5df9cfd374c15639d766ea28c115818f0df3be4050725ae8e8015b1cb8f03b16  hibernate-refresh
+bf47e5e604cc505151e63aaace578e46853496d00293c587a01466c0457e84611de0c18d8aad1f322502ebe1263a1ec47f5a52758b0aa0164f43a45d327dd4e0  hibernate-touch
+b4f3600c035d0159dfbc56f076b0f8e940fe69eef7d1dae0b6e606396533fc210ac671df88af22ea4dfa622f3a89d42020449cf5f440e6c499d69238adc21c06  hibernate-wifi
 493d2c66d4ceda682239b7396ab487a9d7f1eb4f44408659c5d3970540576644deca1ca75935121c9dd3de507e78dc5a4959db2f1aafc25c6374488d7b11d284  hwclock.confd-shutdown
 270fdb37c3d50e4dc43810d9a04281acf986af67792a65fb015094101c409da390f2eb71e882392bb377aad04106d60fecbed85bd98efa91705f3b1d52d0e9e1  migrate.list
 c3271bae55269785c03e7ed9c56359b9faf841efb75ef94bb68f3a01f083ee8bce1c3373e86a708818c5679961babb6267fa2d764a01ed300d6da03dbdd2981f  networkmanager-wlan.conf

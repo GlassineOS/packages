@@ -28,7 +28,7 @@
  * glassine-settings and glassine-shell as the desktop user, group video):
  *   power_key=suspend|ignore   cover=suspend|ignore
  *   idle_sleep_min=N (0 = never)   wifi_off_after_min=N (0 = at once, -1 = never)
- *   hibernate_after_min=N (0 = never: the default)
+ *   hibernate_after_min=N (0 = never; the default 4320: three days)
  *   light_br=0..28  light_ct=0..24  (front light, restored at start and on wake;
  *       no light_br: the light is left as it is at start)
  *   light_managed=0|1  (1: brightness and warmth follow the sun, see managed_tick)
@@ -91,7 +91,7 @@ static struct {
     int br, ct;
     int br_set;                     /* power.conf has light_br */
     int hib_after;                  /* minutes asleep before a hibernate, 0 = never */
-} cf = { 1, 1, 10, 0, 0, 12, 0, 0 };
+} cf = { 1, 1, 10, 0, 0, 12, 0, 4320 };
 /* managed light: limits and offsets in %, the schedule's current value, and what is on */
 static struct { int on, bmin, bmax, wmin, wmax, boff, woff, b, w, br, ct; } lm = { 0, 20, 80, 10, 90, 0, 0, -1, -1, -1, -1 };
 #define LIGHT_FLOOR 5                   /* % (glassine-settings and glassine-shell keep the same) */

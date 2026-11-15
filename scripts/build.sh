@@ -123,6 +123,7 @@ if [ -n "$merge" ]; then
 		if [ -n "$built" ]; then printf '%s\n' "$built" > "$tmp/built"; else : > "$tmp/built"; fi
 		if [ -n "$locks" ]; then cp "$locks" "$tmp/locks"; else : > "$tmp/locks"; fi
 		sh scripts/changed.sh --arch "$arch" all | while read -r d; do basename "$d"; done > "$tmp/recipes"
+		[ -s "$tmp/recipes" ] || { echo "no recipe is published for $arch" >&2; exit 1; }
 		sh scripts/retain.sh "$tmp/live" "$tmp/built" "$tmp/locks" "$tmp/recipes" > "$tmp/keep"
 		usecache=
 		if [ -n "$cache" ] && cmp -s "$cache/APKINDEX.tar.gz" "$tmp/APKINDEX.tar.gz"; then

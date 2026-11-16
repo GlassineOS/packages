@@ -1,0 +1,40 @@
+# Maintainer: Moritz Meißelbach <moritz@glassine.org>
+# gspl-encode from GlassineOS/loader (tools/gspl-encode): writes the splash images of
+# GlassineOS/boot's image format 2 (docs/boot-partition.md, "The image format") from a
+# PNM picture or raw framebuffer pixels, in the layout the display takes (grey8 for a
+# grey panel), and checks one as the loader does (--check). The one writer the running
+# system's splash, override and hibernate preview share with the release images.
+pkgname=gspl-encode
+pkgver=0.2.0
+# GlassineOS/loader main, the merge of #10 (the workspace's version 0.2.0)
+_commit=15b1ddb612f73b633ab35ab8c65a30c3d6f674fb
+pkgrel=0
+pkgdesc="GlassineOS boot splash image writer and checker (image format 2)"
+url="https://github.com/GlassineOS/loader"
+arch="aarch64 x86_64"
+license="GPL-2.0-or-later"
+# cargo: its crates (lz4_flex, sha2) are fetched in prepare
+makedepends="cargo"
+options="net"
+source="loader-$_commit.tar.gz::$url/archive/$_commit.tar.gz"
+builddir="$srcdir/loader-$_commit"
+
+prepare() {
+	default_prepare
+	cargo fetch --locked
+}
+
+build() {
+	cargo build --frozen --release -p gspl-encode
+}
+
+check() {
+	cargo test --frozen --release -p gspl-encode -p glassine-loader-core
+}
+
+package() {
+	install -Dm755 target/release/gspl-encode "$pkgdir"/usr/bin/gspl-encode
+}
+sha512sums="
+aab764da3613d1316654b8202399930795b3eff31f6848f36a58732b470e1f3ec07f22dcb86f59f066b930892cc6cb49cf6cbc8ac43ddc09c6b1c137bfb689c7  loader-15b1ddb612f73b633ab35ab8c65a30c3d6f674fb.tar.gz
+"

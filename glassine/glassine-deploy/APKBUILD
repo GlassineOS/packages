@@ -22,12 +22,14 @@
 # glassine-bootimg-promote service), with the board's hand-off from
 # /etc/glassine-bootimg/board.conf (the device or PC package provides it); on a PC
 # (HANDOFF=uefi) the kernel sets on the boot partition, and `rollback --limit` after
-# the loader's limit. The packer (bootpart-test) and the block-list tool need python3,
-# which this package doesn't pull in: the uefi hand-off is shell only.
+# the loader's limit. glassine-deploy receive --boot takes a device tree or an initramfs
+# into the system partition's boot/, which glassine-bootimg packs from. The packer
+# (bootpart-test) and the block-list tool need python3, which this package doesn't pull
+# in: the uefi hand-off is shell only.
 pkgname=glassine-deploy
-pkgver=0.6.0
+pkgver=0.7.0
 # GlassineOS/boot main
-_commit=0911747b62462be432159b33320d3e32b659366a
+_commit=df5e6e621d9ff170fc875564ac206e7752d14025
 pkgrel=0
 pkgdesc="GlassineOS deployments: read-only bases, tried updates, reset, hibernation"
 url="https://github.com/GlassineOS/boot"
@@ -88,5 +90,5 @@ _bootimg() {
 }
 
 sha512sums="
-3e3a23b1b60e2c4baf233c1f076358899f738914e705899c9d81cfb2f9540d2e358830bf8876880e87dc7a2b48a018bca18dc8febd2cda29d9e0628cfa9147ed  boot-0911747b62462be432159b33320d3e32b659366a.tar.gz
+ee0979d66533512b6f345708417e58d2c5ceccecff0824bc1faadea0960123181550a2e83ce352b715fcd3f71366108e4369d12dcb737a6c379b6821aa99d94c  boot-df5e6e621d9ff170fc875564ac206e7752d14025.tar.gz
 "

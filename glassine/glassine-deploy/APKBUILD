@@ -20,7 +20,10 @@
 # (boot's docs/boot-partition.md, 010 FR-012/FR-023, 012); on other boards it does
 # nothing. glassine-boot-raw: the running system's writer of the raw boot partition (its
 # region table, the loader, the splash images; boot's docs/boot-partition.md "The raw
-# form").
+# form"). glassine-loader-update (0.7.3): on such a board the accept step, after a
+# healthy mark it wrote, writes the loader and the default splash a board's loader
+# package ships (/usr/share/glassine/loader) into that partition when it holds other
+# ones (boot's specs/012 FR-026); with no such package it does nothing.
 # glassine-bootimg (a subpackage, same source): kernel updates in the deployments
 # layout (install, reboot-test, accept, rollback, the verdict at boot by the
 # glassine-bootimg-promote service), with the board's hand-off from
@@ -31,9 +34,9 @@
 # (bootpart-test) and the block-list tool need python3, which this package doesn't pull
 # in: the uefi hand-off is shell only.
 pkgname=glassine-deploy
-pkgver=0.7.2
+pkgver=0.7.3
 # GlassineOS/boot main
-_commit=377eec62f677123e4196c5bdfc2e9934e2071e13
+_commit=31a94f035612ff4387ccc44dcd5f3aa3d89557e7
 pkgrel=0
 pkgdesc="GlassineOS deployments: read-only bases, tried updates, reset, hibernation"
 url="https://github.com/GlassineOS/boot"
@@ -58,7 +61,7 @@ builddir="$srcdir/boot-$_commit"
 package() {
 	local f
 	for f in glassine glassine-deploy glassine-deploy-accept glassine-switch-hook glassine-hibernate \
-		glassine-device-seed glassine-devmode glassine-first-start glassine-loader-mark glassine-boot-raw; do
+		glassine-device-seed glassine-devmode glassine-first-start glassine-loader-mark glassine-boot-raw glassine-loader-update; do
 		install -Dm755 sbin/$f "$pkgdir"/usr/sbin/$f
 	done
 	for f in glassine-switch glassine-mount-ro glassine-deploy-accept glassine-device-seed glassine-devmode \
@@ -94,5 +97,5 @@ _bootimg() {
 }
 
 sha512sums="
-b04a058b0430c974ffd6d3c662fe32ff204c13a13df35c31022486626d3937318ac7710a8dc4cb73624239f74e15b6b358d64f8e68c99a140b0efd2b34895945  boot-377eec62f677123e4196c5bdfc2e9934e2071e13.tar.gz
+b45a5cf5c24bf2a958ecda27f9a197bcc1962f9a45b3520dd3a6ad2a875b7212817071f82306ebd54dbb01b7b996306cd53d8423ddcceb4a09c91e6a1e1bd502  boot-31a94f035612ff4387ccc44dcd5f3aa3d89557e7.tar.gz
 "

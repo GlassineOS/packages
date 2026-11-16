@@ -17,9 +17,9 @@
 pkgname=glassine-handwriting
 pkgver=0_git20261116
 # GlassineOS/handwriting main
-_commit=ebe894018190dbfb4c0294275ad935f431e0c700
+_commit=0f769f21e2d57ca8923cdc6df94d01697890a865
 _gf=https://raw.githubusercontent.com/google/fonts/0b58fb370093f9a9f4ff785d94405710b79de67c/ofl
-pkgrel=5
+pkgrel=6
 pkgdesc="GlassineOS handwriting recognizer"
 url="https://github.com/GlassineOS/handwriting"
 arch="all"
@@ -81,14 +81,14 @@ service() {
 samples() {
 	pkgdesc="GlassineOS handwriting samples app"
 	license="GPL-2.0-or-later AND OFL-1.1"
-	depends="$pkgname=$pkgver-r$pkgrel py3-$pkgname=$pkgver-r$pkgrel gtk+3.0 py3-cairo py3-glassine-ui py3-gobject3 python3"
+	depends="$pkgname=$pkgver-r$pkgrel py3-$pkgname=$pkgver-r$pkgrel $pkgname-service=$pkgver-r$pkgrel gtk+3.0 py3-cairo py3-glassine-ui py3-gobject3 python3"
 	make -C "$builddir"/../samples DESTDIR="$subpkgdir" PREFIX=/usr install
 	install -Dm644 "$srcdir"/Kalam-Regular.ttf -t "$subpkgdir"/usr/share/fonts/glassine-handwriting/
 	install -Dm644 "$srcdir"/Kalam-OFL.txt "$subpkgdir"/usr/share/licenses/$subpkgname/Kalam-OFL-1.1.txt
 }
 
 sha512sums="
-9aa5fcf7f2025bca6254930f01c8939e485d5e94151b303892d21df9e667b1851e1a1de82764a7dbbe32770ac4e1c1a8dc5f92c6d65a1166943671a3bc7045ae  handwriting-ebe894018190dbfb4c0294275ad935f431e0c700.tar.gz
+f223219df52391d92cc82665450640be493ea2eababb3ed91495e5a66b3fb03452f7ec9928a2f779c13abdea15f22bfc24b18b37b9d4264f5938c011521a26da  handwriting-0f769f21e2d57ca8923cdc6df94d01697890a865.tar.gz
 9c48be00cf86765639724b93e4f3525330c93cea4825d0cff19cd43d52b0317db764b5173055210cdb303c2857bf426dd3c86f113fc45fbe0ab75888a79334db  Kalam-Regular.ttf
 eae53aa2ac365f68cf77751d2ceca71b7ac78d48bd606a987754742926caeafb811e9bc1b9c69183a83f971a7c9cc388c56195392a87486aa167186e691f1eab  Kalam-OFL.txt
 "

@@ -1,16 +1,21 @@
 # Maintainer: Moritz Meißelbach <moritz@glassine.org>
 # Base models of glassine-handwriting (GlassineOS/handwriting docs/recognizer.md), one
 # subpackage per language, each the directory /usr/share/glassine/handwriting/LANG/
-# (recognizer.ghm, README with the recipe and data sources, LICENSES, prompts.txt).
+# (recognizer.ghm, README with the recipe and data sources, LICENSES, prompts.txt) and the
+# language's character model beside it (chars.gclm, chars.json, CHARS-LICENSE).
 # The models are trained by hand and published as release assets of GlassineOS/handwriting
 # (models/README.md); the asset's URL follows the version. A newer English model: set
-# pkgver to its version and replace its sha512sums line (the release's .sha512 file).
+# pkgver to its version and replace its sha512sums line (the release's .sha512 file); the
+# character model is counted from public-domain text by a reproducible step and released
+# as chars-LANG-N with its own version (_chars_en), bumped the same way plus pkgrel.
 # Licences: the model GPL-2.0-or-later (trained on public-domain text rendered as
-# synthetic ink from OFL and Apache-2.0 fonts; it holds neither), prompts.txt CC0-1.0;
+# synthetic ink from OFL and Apache-2.0 fonts; it holds neither), the character model
+# GPL-2.0-or-later (counts from public-domain books, no text), prompts.txt CC0-1.0;
 # LICENSES lists all.
 pkgname=glassine-handwriting-model
 pkgver=2
-pkgrel=0
+pkgrel=1
+_chars_en=1
 pkgdesc="Handwriting recognition models of GlassineOS"
 url="https://github.com/GlassineOS/handwriting"
 arch="noarch"
@@ -19,7 +24,9 @@ license="GPL-2.0-or-later AND CC0-1.0"
 depends="$pkgname-en"
 options="!check" # a release is checked against the recognizer (make check-model) before it is published
 subpackages="$pkgname-en:_en"
-source="$pkgname-en-$pkgver.tar.gz::$url/releases/download/model-en-$pkgver/$pkgname-en-$pkgver.tar.gz"
+source="$pkgname-en-$pkgver.tar.gz::$url/releases/download/model-en-$pkgver/$pkgname-en-$pkgver.tar.gz
+	glassine-handwriting-chars-en-$_chars_en.tar.gz::$url/releases/download/chars-en-$_chars_en/glassine-handwriting-chars-en-$_chars_en.tar.gz
+	"
 builddir="$srcdir"
 
 package() {
@@ -30,10 +37,12 @@ _model() {
 	pkgdesc="Handwriting recognition model of GlassineOS ($1)"
 	depends=""
 	install -Dm644 "$srcdir/$pkgname-$2-$pkgver"/* -t "$subpkgdir"/usr/share/glassine/handwriting/$2/
+	install -Dm644 "$srcdir/glassine-handwriting-chars-$2-$3"/* -t "$subpkgdir"/usr/share/glassine/handwriting/$2/
 }
 
-_en() { _model English en; }
+_en() { _model English en $_chars_en; }
 
 sha512sums="
 f9d23bc6abe7f27649d0cc2c9d0bdde8fa16d95cfa282f05ca097229072f54942fcb806f9491d55c199c80d844349a67f4866de7876686297834baa54c3b5b86  glassine-handwriting-model-en-2.tar.gz
+6b332f956b6760992fdf7b2b5267700e8bf97f1517c8e1404ddebdc542d8fc0917bc3c817a8a0519b6e3af90f7661c2a9a95b98eba528a3a13a467893e7ac4e5  glassine-handwriting-chars-en-1.tar.gz
 "

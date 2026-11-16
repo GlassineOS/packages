@@ -3,24 +3,28 @@
 # behind a line contract (docs/recognizer.md) that the on-screen keyboard and apps start
 # as a child process. Its base models are glassine-handwriting-model-LANG; in prose fields
 # it also reads with the keyboard predictor's words (glassine-predict-model) when installed.
+# From the person's samples it makes a letter model and their handwriting font (spec 003),
+# installed into the user's font directory; fontconfig's fc-cache makes apps see it at once.
 # glassine-handwriting-samples is the handwriting samples app (spec 002): write shown
 # text so the recognizer learns the person's hand, and donate reviewed samples. It shows
 # words without ink in Kalam (the design's hand-like face; Alpine doesn't package it), a
 # pinned google/fonts file (OFL) as in glassine-shell-fonts.
 pkgname=glassine-handwriting
-pkgver=0_git20261115
+pkgver=0_git20261116
 # GlassineOS/handwriting main
-_commit=07dc30feb06c0de522a79056d973f1bfc19345e0
+_commit=e5ac125a825811ca8844fa7449f89f0501fef50d
 _gf=https://raw.githubusercontent.com/google/fonts/0b58fb370093f9a9f4ff785d94405710b79de67c/ofl
-pkgrel=12
+pkgrel=0
 pkgdesc="GlassineOS handwriting recognizer"
 url="https://github.com/GlassineOS/handwriting"
 arch="all"
 license="GPL-2.0-or-later"
+depends="fontconfig"
 makedepends="json-c-dev pkgconf"
 # make check: the engine's unit tests, the features and characters against the trainer's
-# Python (numpy only), the contract against a tiny test model; no trained model needed
-checkdepends="python3 py3-numpy"
+# Python (numpy only), the contract against a tiny test model; no trained model needed;
+# the font against fontTools, HarfBuzz's shaper and fontconfig
+checkdepends="python3 py3-numpy py3-fonttools harfbuzz-utils fontconfig"
 subpackages="$pkgname-doc $pkgname-samples:samples:noarch"
 source="handwriting-$_commit.tar.gz::$url/archive/$_commit.tar.gz
 	Kalam-Regular.ttf::$_gf/kalam/Kalam-Regular.ttf
@@ -53,7 +57,7 @@ samples() {
 }
 
 sha512sums="
-70610c7a7032f2501c49c99ad78f120648d6d7d1a06e7ac8cc57a05f61cdddcdfb625f1602924a2d0f60ee65b1d4a8ce48d9ce43be6b423cdee6b4de446cfcb2  handwriting-07dc30feb06c0de522a79056d973f1bfc19345e0.tar.gz
+2c460427beeff70999bb1864b37c0b7299357ab3e02e25d4497cd0f3918e6b0e7b2f33e82694cd921ba1736210cacf11ec3b19fbc5086ce77ed7317647c18752  handwriting-e5ac125a825811ca8844fa7449f89f0501fef50d.tar.gz
 9c48be00cf86765639724b93e4f3525330c93cea4825d0cff19cd43d52b0317db764b5173055210cdb303c2857bf426dd3c86f113fc45fbe0ab75888a79334db  Kalam-Regular.ttf
 eae53aa2ac365f68cf77751d2ceca71b7ac78d48bd606a987754742926caeafb811e9bc1b9c69183a83f971a7c9cc388c56195392a87486aa167186e691f1eab  Kalam-OFL.txt
 "

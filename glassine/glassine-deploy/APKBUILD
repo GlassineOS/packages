@@ -13,10 +13,21 @@
 # deploy.conf asks for. glassine-first-start (boot) turns an installed system (a pool
 # image made by `glassine-deploy init --install-marker`) into a normal one on its first,
 # bare boot: grows the system partition, formats userdata, selects the first deployment.
+# glassine-loader-mark (with lib/glassine-bootpart.sh): the loader's start count on a
+# PC's boot partition (HANDOFF=uefi in board.conf): the healthy mark after a healthy
+# boot, the shutdown step as the system goes down (boot's docs/boot-partition.md, 010
+# FR-012/FR-023); on other boards it does nothing.
+# glassine-bootimg (a subpackage, same source): kernel updates in the deployments
+# layout (install, reboot-test, accept, rollback, the verdict at boot by the
+# glassine-bootimg-promote service), with the board's hand-off from
+# /etc/glassine-bootimg/board.conf (the device or PC package provides it); on a PC
+# (HANDOFF=uefi) the kernel sets on the boot partition, and `rollback --limit` after
+# the loader's limit. The packer (bootpart-test) and the block-list tool need python3,
+# which this package doesn't pull in: the uefi hand-off is shell only.
 pkgname=glassine-deploy
-pkgver=0.5.1
+pkgver=0.6.0
 # GlassineOS/boot main
-_commit=68288a2b8c5049b57dac8d3358aef8d81d965050
+_commit=0911747b62462be432159b33320d3e32b659366a
 pkgrel=0
 pkgdesc="GlassineOS deployments: read-only bases, tried updates, reset, hibernation"
 url="https://github.com/GlassineOS/boot"
@@ -33,15 +44,15 @@ depends="apk-tools btrfs-progs busybox busybox-extras e2fsprogs e2fsprogs-extra 
 # !tracedeps: no automatic provides, or /usr/sbin/apk would provide cmd:apk and
 # conflict with apk-tools (scripts only: the depends above are complete)
 options="!check !tracedeps"
-subpackages="$pkgname-doc"
-install="$pkgname.post-install $pkgname.pre-deinstall"
+subpackages="$pkgname-doc glassine-bootimg:_bootimg"
+install="$pkgname.post-install $pkgname.pre-deinstall glassine-bootimg.post-install glassine-bootimg.pre-deinstall"
 source="boot-$_commit.tar.gz::https://github.com/GlassineOS/boot/archive/$_commit.tar.gz"
 builddir="$srcdir/boot-$_commit"
 
 package() {
 	local f
 	for f in glassine glassine-deploy glassine-deploy-accept glassine-switch-hook glassine-hibernate \
-		glassine-device-seed glassine-devmode glassine-first-start; do
+		glassine-device-seed glassine-devmode glassine-first-start glassine-loader-mark; do
 		install -Dm755 sbin/$f "$pkgdir"/usr/sbin/$f
 	done
 	for f in glassine-switch glassine-mount-ro glassine-deploy-accept glassine-device-seed glassine-devmode \
@@ -49,16 +60,33 @@ package() {
 		install -Dm755 openrc/$f "$pkgdir"/etc/init.d/$f
 	done
 	ln -s glassine "$pkgdir"/usr/sbin/apk
-	for f in glassine-state.sh glassine-root.sh glassine-accounts.sh glassine-device.sh; do
+	for f in glassine-state.sh glassine-root.sh glassine-accounts.sh glassine-device.sh glassine-bootpart.sh; do
 		install -Dm644 lib/$f "$pkgdir"/usr/lib/glassine-boot/$f
 	done
 	install -Dm644 conf/deploy.conf.example "$pkgdir"/usr/share/glassine-boot/deploy.conf.example
 	install -Dm644 conf/migrate.d/glassine-deploy.list "$pkgdir"/usr/share/glassine/migrate.d/glassine-deploy.list
 	install -Dm644 docs/deployments.md "$pkgdir"/usr/share/doc/$pkgname/deployments.md
 	install -Dm644 docs/kernel-artifacts.md "$pkgdir"/usr/share/doc/$pkgname/kernel-artifacts.md
+	install -Dm644 docs/boot-partition.md "$pkgdir"/usr/share/doc/$pkgname/boot-partition.md
 	# the accept step runs the same health checks as a kernel test boot (ACCEPT_HEALTH_DIR)
 	install -d "$pkgdir"/etc/glassine-bootimg/health.d "$pkgdir"/etc/glassine/hibernate.d
 }
+_bootimg() {
+	pkgdesc="GlassineOS kernel updates in the deployments layout: a tried kernel, its verdict, rollback"
+	# build-boot-modules.sh: kmod cpio gzip, xz and zstd for compressed modules
+	depends="$pkgname=$pkgver-r$pkgrel busybox openrc kmod cpio gzip xz zstd"
+	cd "$builddir"
+	install -Dm755 sbin/glassine-bootimg "$subpkgdir"/usr/sbin/glassine-bootimg
+	install -Dm644 lib/glassine-kernel.sh "$subpkgdir"/usr/lib/glassine-boot/glassine-kernel.sh
+	install -Dm755 lib/glassine-bootimg-pack "$subpkgdir"/usr/lib/glassine-bootimg/glassine-bootimg-pack
+	install -Dm755 lib/glassine-blocklist "$subpkgdir"/usr/lib/glassine-bootimg/glassine-blocklist
+	install -Dm755 build-boot-modules.sh "$subpkgdir"/usr/lib/glassine-bootimg/build-boot-modules.sh
+	install -Dm644 conf/boot-modules "$subpkgdir"/usr/lib/glassine-bootimg/conf/boot-modules
+	install -Dm755 openrc/glassine-bootimg-promote "$subpkgdir"/etc/init.d/glassine-bootimg-promote
+	install -Dm644 conf/board.conf.example "$subpkgdir"/usr/share/glassine-bootimg/board.conf.example
+	install -d "$subpkgdir"/etc/glassine-bootimg/post-promote.d "$subpkgdir"/etc/glassine-bootimg/post-fail.d
+}
+
 sha512sums="
-f1139aacb9a310f7c3f76b958b00f92484567a7cabdeec99cbf50146aaae34605e519f4e3cb46f8175bfb5bdc574b042aea770533509e1c7e83285f11dd8e1bf  boot-68288a2b8c5049b57dac8d3358aef8d81d965050.tar.gz
+3e3a23b1b60e2c4baf233c1f076358899f738914e705899c9d81cfb2f9540d2e358830bf8876880e87dc7a2b48a018bca18dc8febd2cda29d9e0628cfa9147ed  boot-0911747b62462be432159b33320d3e32b659366a.tar.gz
 "

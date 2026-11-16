@@ -27,9 +27,9 @@
 # (bootpart-test) and the block-list tool need python3, which this package doesn't pull
 # in: the uefi hand-off is shell only.
 pkgname=glassine-deploy
-pkgver=0.7.0
+pkgver=0.7.1
 # GlassineOS/boot main
-_commit=df5e6e621d9ff170fc875564ac206e7752d14025
+_commit=5f9cc7c864cfb92a40b6b6daa163acdce1ca39e2
 pkgrel=0
 pkgdesc="GlassineOS deployments: read-only bases, tried updates, reset, hibernation"
 url="https://github.com/GlassineOS/boot"
@@ -90,5 +90,5 @@ _bootimg() {
 }
 
 sha512sums="
-ee0979d66533512b6f345708417e58d2c5ceccecff0824bc1faadea0960123181550a2e83ce352b715fcd3f71366108e4369d12dcb737a6c379b6821aa99d94c  boot-df5e6e621d9ff170fc875564ac206e7752d14025.tar.gz
+ebb7db53a94d2bc627b6c8f8188445436288ca8e3889aacf86cfcad93b0e766c2d85dd4e3d8ce9af53c7fa2cb744cebcc0020b7f7cd53f366f3fe33125092f5d  boot-5f9cc7c864cfb92a40b6b6daa163acdce1ca39e2.tar.gz
 "

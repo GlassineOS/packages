@@ -4,9 +4,14 @@
 # the publish workflow builds instead (once the repo is public).
 # Also the host tests of the publish job's retention rule (scripts/test-retain.sh) and
 # package selection (scripts/test-changed.sh).
+# A branch is checked through its pull request only: a push to a branch would build
+# the same changes again, and a new branch's first push has no previous commit to
+# compare with, so it would build every recipe. A branch without a pull request can
+# be checked by hand (workflow_dispatch).
 name: build
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
     inputs:

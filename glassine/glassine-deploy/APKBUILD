@@ -17,6 +17,13 @@
 # PC's boot partition (HANDOFF=uefi in board.conf): the healthy mark after a healthy
 # boot, the shutdown step as the system goes down (boot's docs/boot-partition.md, 010
 # FR-012/FR-023); on other boards it does nothing.
+# glassine-bootimg (a subpackage, same source): kernel updates in the deployments
+# layout (install, reboot-test, accept, rollback, the verdict at boot by the
+# glassine-bootimg-promote service), with the board's hand-off from
+# /etc/glassine-bootimg/board.conf (the device or PC package provides it); on a PC
+# (HANDOFF=uefi) the kernel sets on the boot partition, and `rollback --limit` after
+# the loader's limit. The packer (bootpart-test) and the block-list tool need python3,
+# which this package doesn't pull in: the uefi hand-off is shell only.
 pkgname=glassine-deploy
 pkgver=0.6.0
 # GlassineOS/boot main
@@ -37,8 +44,8 @@ depends="apk-tools btrfs-progs busybox busybox-extras e2fsprogs e2fsprogs-extra 
 # !tracedeps: no automatic provides, or /usr/sbin/apk would provide cmd:apk and
 # conflict with apk-tools (scripts only: the depends above are complete)
 options="!check !tracedeps"
-subpackages="$pkgname-doc"
-install="$pkgname.post-install $pkgname.pre-deinstall"
+subpackages="$pkgname-doc glassine-bootimg:_bootimg"
+install="$pkgname.post-install $pkgname.pre-deinstall glassine-bootimg.post-install glassine-bootimg.pre-deinstall"
 source="boot-$_commit.tar.gz::https://github.com/GlassineOS/boot/archive/$_commit.tar.gz"
 builddir="$srcdir/boot-$_commit"
 
@@ -64,6 +71,22 @@ package() {
 	# the accept step runs the same health checks as a kernel test boot (ACCEPT_HEALTH_DIR)
 	install -d "$pkgdir"/etc/glassine-bootimg/health.d "$pkgdir"/etc/glassine/hibernate.d
 }
+_bootimg() {
+	pkgdesc="GlassineOS kernel updates in the deployments layout: a tried kernel, its verdict, rollback"
+	# build-boot-modules.sh: kmod cpio gzip, xz and zstd for compressed modules
+	depends="$pkgname=$pkgver-r$pkgrel busybox openrc kmod cpio gzip xz zstd"
+	cd "$builddir"
+	install -Dm755 sbin/glassine-bootimg "$subpkgdir"/usr/sbin/glassine-bootimg
+	install -Dm644 lib/glassine-kernel.sh "$subpkgdir"/usr/lib/glassine-boot/glassine-kernel.sh
+	install -Dm755 lib/glassine-bootimg-pack "$subpkgdir"/usr/lib/glassine-bootimg/glassine-bootimg-pack
+	install -Dm755 lib/glassine-blocklist "$subpkgdir"/usr/lib/glassine-bootimg/glassine-blocklist
+	install -Dm755 build-boot-modules.sh "$subpkgdir"/usr/lib/glassine-bootimg/build-boot-modules.sh
+	install -Dm644 conf/boot-modules "$subpkgdir"/usr/lib/glassine-bootimg/conf/boot-modules
+	install -Dm755 openrc/glassine-bootimg-promote "$subpkgdir"/etc/init.d/glassine-bootimg-promote
+	install -Dm644 conf/board.conf.example "$subpkgdir"/usr/share/glassine-bootimg/board.conf.example
+	install -d "$subpkgdir"/etc/glassine-bootimg/post-promote.d "$subpkgdir"/etc/glassine-bootimg/post-fail.d
+}
+
 sha512sums="
 3e3a23b1b60e2c4baf233c1f076358899f738914e705899c9d81cfb2f9540d2e358830bf8876880e87dc7a2b48a018bca18dc8febd2cda29d9e0628cfa9147ed  boot-0911747b62462be432159b33320d3e32b659366a.tar.gz
 "

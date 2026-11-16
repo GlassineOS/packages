@@ -1,0 +1,4 @@
+#!/bin/sh
+# the verdict on a kernel's test boot, a cut default write completed, a deferred install
+rc-update add glassine-bootimg-promote default >/dev/null 2>&1
+exit 0

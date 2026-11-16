@@ -1,17 +1,18 @@
 # Maintainer: Moritz Meißelbach <moritz@glassine.org>
-# wvkbd-glassine from GlassineOS/wvkbd (tag 0.21-glassine9, branch glassine/0.21): wvkbd
+# wvkbd-glassine from GlassineOS/wvkbd (tag 0.21-glassine10, branch glassine/0.21): wvkbd
 # 0.21 with themable keys (key outline, gap), a German QWERTZ layer, long press (the
 # alternate in a key's corner), and the input method: committed text, a suggestion strip
 # fed by glassine-predict when installed, keys by field purpose, and the handwriting
 # paper fed by glassine-handwriting when installed (Backspace and discard on it; it opens
 # when the pen comes into range away from the keys; spaces around handwritten readings,
-# a search in a URL field included). Installs only
+# a search in a URL field included; the paper's ink with the screen's size and its guide
+# line, so the recognizer reads lone marks and case by size). Installs only
 # /usr/bin/wvkbd-glassine, the keyboard the GlassineOS shell starts, so Alpine's wvkbd
 # stays installable beside it.
 pkgname=wvkbd-glassine
-# the tag 0.21-glassine9 (ADR 0005: <upstream>-glassine<N>); apk spells the N as _p<N>
-pkgver=0.21_p9
-_tag=0.21-glassine9
+# the tag 0.21-glassine10 (ADR 0005: <upstream>-glassine<N>); apk spells the N as _p<N>
+pkgver=0.21_p10
+_tag=0.21-glassine10
 pkgrel=0
 pkgdesc="On-screen keyboard for wlroots (GlassineOS: themable keys, long press, input method with suggestions)"
 url="https://github.com/GlassineOS/wvkbd"
@@ -35,5 +36,5 @@ package() {
 }
 
 sha512sums="
-f867f9baccdb913ee8104bdd770e39e0629a62f50b181b885aa75e65b08733c34ff3a4e8bf944dcef848b9ffe81951c4b443c87ed0d582283238fc782f440be7  wvkbd-0.21-glassine9.tar.gz
+44da9b6438cfaba706bce5dbf00483be78f244a5e36b68ddc9da12e5541a1508d7385e48732583395ab8e5ef2e0dd7e7c3d47efd29067ead7416c840c88a0a4e  wvkbd-0.21-glassine10.tar.gz
 "

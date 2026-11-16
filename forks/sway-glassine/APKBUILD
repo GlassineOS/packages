@@ -1,17 +1,19 @@
 # Maintainer: Moritz Meißelbach <moritz@glassine.org>
 # sway-glassine from GlassineOS/sway (branch glassine/1.10.1): sway with the e-ink output
 # backend that hands frames to glassine-epdd-desktop, touch gestures, popup hints and
-# the pen's ink areas. Our wlroots 0.18.2 patches (the GLES grey output and its fixes,
-# in the sway repository's wlroots/) are linked in statically, so the system's sway and
+# the pen's ink areas, and the pen interface of handwriting (it starts
+# glassine-handwriting-service, from the package of that name, when it is installed).
+# Our wlroots 0.18.2 patches (the GLES grey output and its fixes, in the sway
+# repository's wlroots/) are linked in statically, so the system's sway and
 # libwlroots stay as they are: this package installs only /usr/bin/sway-glassine, the
 # binary the GlassineOS session starts. swaymsg and the rest come from Alpine's sway.
 pkgname=sway-glassine
-pkgver=1.10.1_git20261115
-# GlassineOS/sway glassine/1.10.1
-_commit=9f8288c89bb89895f19f976dc6d9f9eeb630f1cc
+pkgver=1.10.1_git20261116
+# GlassineOS/sway glassine/1.10.1 (tag 1.10.1-glassine1)
+_commit=e7929b7af07f4fc279816206b670b84d680e0b76
 _wlrver=0.18.2
-pkgrel=4
-pkgdesc="sway with the GlassineOS e-ink output backend, gestures and ink areas"
+pkgrel=0
+pkgdesc="sway with the GlassineOS e-ink output backend, gestures, ink areas and the pen interface"
 url="https://github.com/GlassineOS/sway"
 arch="all"
 license="MIT"
@@ -96,6 +98,6 @@ package() {
 }
 
 sha512sums="
-80ff5aa31c247c4a5263bf6de728615484fae586a05a7bea92c87d73b734ce1e330343ae186807cf16e041b3c2638eea65c83295d1b32b874f17831c395bbdee  sway-9f8288c89bb89895f19f976dc6d9f9eeb630f1cc.tar.gz
+4132a7a2b523ded45355f41212f121c7213d3cf3f11b68747eeb9ba381b33de3084203cc07530e11299929b68658c627d223119d0a35530761f49d57380f5584  sway-e7929b7af07f4fc279816206b670b84d680e0b76.tar.gz
 59b0889f65e9cd914273c87a6547fa865577c34e26ddb178974be665721ac77d7146b0f45f341b64a44eb4b0bd689fab16d7972130eac443260181ff2b5a9ef7  wlroots-0.18.2.tar.gz
 "

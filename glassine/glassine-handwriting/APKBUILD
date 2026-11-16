@@ -9,23 +9,30 @@
 # text so the recognizer learns the person's hand, and donate reviewed samples. It shows
 # words without ink in Kalam (the design's hand-like face; Alpine doesn't package it), a
 # pinned google/fonts file (OFL) as in glassine-shell-fonts.
+# glassine-handwriting-service is handwriting for apps (spec 004, docs/service.md): one
+# recognizer for every app in the session, the service socket for apps and the channel
+# behind the pen interface, which sway-glassine starts it on. libglassine-handwriting
+# (-libs, -dev) and py3-glassine-handwriting are the pen interface's client library
+# (docs/pen-interface.md).
 pkgname=glassine-handwriting
 pkgver=0_git20261116
 # GlassineOS/handwriting main
-_commit=8d6b0bc3ea0752ca592755d1b4511ad4be777558
+_commit=1c9ab270994c9a9970652ed2d1d430d57883a465
 _gf=https://raw.githubusercontent.com/google/fonts/0b58fb370093f9a9f4ff785d94405710b79de67c/ofl
-pkgrel=3
+pkgrel=4
 pkgdesc="GlassineOS handwriting recognizer"
 url="https://github.com/GlassineOS/handwriting"
 arch="all"
 license="GPL-2.0-or-later"
 depends="fontconfig"
-makedepends="json-c-dev pkgconf"
+makedepends="json-c-dev pkgconf wayland-dev"
 # make check: the engine's unit tests, the features and characters against the trainer's
 # Python (numpy only), the contract against a tiny test model; no trained model needed;
 # the font against fontTools, HarfBuzz's shaper and fontconfig
-checkdepends="python3 py3-numpy py3-fonttools harfbuzz-utils fontconfig"
-subpackages="$pkgname-doc $pkgname-samples:samples:noarch"
+# the service's tests run its interface against the schema (py3-jsonschema)
+checkdepends="python3 py3-numpy py3-fonttools harfbuzz-utils fontconfig py3-jsonschema"
+subpackages="$pkgname-doc $pkgname-dev $pkgname-libs $pkgname-samples:samples:noarch
+	$pkgname-service:service:noarch py3-$pkgname:py3:noarch"
 source="handwriting-$_commit.tar.gz::$url/archive/$_commit.tar.gz
 	Kalam-Regular.ttf::$_gf/kalam/Kalam-Regular.ttf
 	Kalam-OFL.txt::$_gf/kalam/OFL.txt
@@ -34,30 +41,54 @@ builddir="$srcdir/handwriting-$_commit/recognizer"
 
 build() {
 	make
+	make -C ../client O=out
 }
 
 check() {
 	make check
 	# the samples app's flows against the recognizer just built (no toolkit needed)
 	make -C ../samples check HW_BIN="$builddir"/glassine-handwriting
+	# the service and its interface (the pen interface end to end runs in the
+	# repository's CI, against sway's stand-in compositor)
+	make -C ../service check HW_BIN="$builddir"/glassine-handwriting
 }
 
 package() {
 	make DESTDIR="$pkgdir" PREFIX=/usr install
-	install -Dm644 ../docs/recognizer.md ../docs/samples.md -t "$pkgdir"/usr/share/doc/$pkgname/
+	make -C ../client O=out DESTDIR="$pkgdir" PREFIX=/usr install
+	install -Dm644 ../docs/recognizer.md ../docs/samples.md ../docs/service.md ../docs/pen-interface.md \
+		../docs/service.schema.json -t "$pkgdir"/usr/share/doc/$pkgname/
+}
+
+libs() {
+	pkgdesc="GlassineOS handwriting: the pen interface's client library"
+	depends=""
+	amove usr/lib/libglassine-handwriting.so.*
+}
+
+py3() {
+	pkgdesc="GlassineOS handwriting: the pen interface for Python apps"
+	depends="$pkgname-libs=$pkgver-r$pkgrel python3"
+	amove usr/lib/glassine/python
+}
+
+service() {
+	pkgdesc="GlassineOS handwriting service: handwriting for apps"
+	depends="$pkgname=$pkgver-r$pkgrel python3"
+	make -C "$builddir"/../service DESTDIR="$subpkgdir" PREFIX=/usr install
 }
 
 samples() {
 	pkgdesc="GlassineOS handwriting samples app"
 	license="GPL-2.0-or-later AND OFL-1.1"
-	depends="$pkgname=$pkgver-r$pkgrel gtk+3.0 py3-cairo py3-glassine-ui py3-gobject3 python3"
+	depends="$pkgname=$pkgver-r$pkgrel py3-$pkgname=$pkgver-r$pkgrel gtk+3.0 py3-cairo py3-glassine-ui py3-gobject3 python3"
 	make -C "$builddir"/../samples DESTDIR="$subpkgdir" PREFIX=/usr install
 	install -Dm644 "$srcdir"/Kalam-Regular.ttf -t "$subpkgdir"/usr/share/fonts/glassine-handwriting/
 	install -Dm644 "$srcdir"/Kalam-OFL.txt "$subpkgdir"/usr/share/licenses/$subpkgname/Kalam-OFL-1.1.txt
 }
 
 sha512sums="
-28c22ae4f343a1c4b5f56d1889cc42082bd12d6bcbd40dbbccc724eef56b0b913acfbb3e472690a65d5c9a386fa734c567ed6a6b4ac195c42e9e54d38fc40960  handwriting-8d6b0bc3ea0752ca592755d1b4511ad4be777558.tar.gz
+49eee4812670df7cad44faaea25bc1527aecda8a6cc3d9ac9520eb4cac5fe8f0f3e84082d56b24a78a4ebadddb682d6053720a34329663deb95f4c90d7748ed2  handwriting-1c9ab270994c9a9970652ed2d1d430d57883a465.tar.gz
 9c48be00cf86765639724b93e4f3525330c93cea4825d0cff19cd43d52b0317db764b5173055210cdb303c2857bf426dd3c86f113fc45fbe0ab75888a79334db  Kalam-Regular.ttf
 eae53aa2ac365f68cf77751d2ceca71b7ac78d48bd606a987754742926caeafb811e9bc1b9c69183a83f971a7c9cc388c56195392a87486aa167186e691f1eab  Kalam-OFL.txt
 "

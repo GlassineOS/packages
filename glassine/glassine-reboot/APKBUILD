@@ -3,15 +3,18 @@
 # reason (recovery, bootloader) for the bootloader to act on. glassine-reboot-clean
 # records the reason and hands the reboot to init: init stops the services and
 # makes the root read-only, and its last shutdown service (glassine-reboot-reason)
-# reboots with the reason. The desktop's "Recovery" entry uses it. reboot, as
+# reboots with the reason. The desktop's "Recovery" entry uses it. menu (0.4.0) and,
+# where the board keeps a loader record, recovery are requests in the loader record
+# instead (glassine-loader-mark, from glassine-deploy, then a plain reboot); without
+# glassine-deploy, menu is refused and recovery takes the reason as before. reboot, as
 # /usr/sbin/reboot ahead of busybox's /sbin/reboot on PATH, hands a reason
 # (`reboot bootloader`) to glassine-reboot-clean; without one it is busybox reboot.
 pkgname=glassine-reboot
-pkgver=0.3.0
-# GlassineOS/boot main (as glassine-slot)
-_commit=586075a9fb198b9b111be5654c93f436b544af19
+pkgver=0.4.0
+# GlassineOS/boot main
+_commit=752f8ef9c541acf2de5889cbbed88cd3e38c1e81
 pkgrel=0
-pkgdesc="GlassineOS reboot with a reason (recovery, bootloader)"
+pkgdesc="GlassineOS reboot with a reason (recovery, bootloader) or a loader request (menu)"
 url="https://github.com/GlassineOS/boot"
 arch="all"
 license="GPL-2.0-or-later"
@@ -32,5 +35,5 @@ package() {
 	install -Dm755 openrc/glassine-reboot-reason "$pkgdir"/etc/init.d/glassine-reboot-reason
 }
 sha512sums="
-2d82b456fcf7269e3d3646994efc0d710f3661f8a38165630dc1252147a5e393d066d6f8364fc5d256e2880d72ba4fdddd2441da4ebe05568c42a2695ea76fed  boot-586075a9fb198b9b111be5654c93f436b544af19.tar.gz
+2665d8f8c0f19eda52e03496544fcc98ac2f129374a0686ffe64ddde13efa72a85a8fe3531b7733c14b2e8e346dc673fc86c1f4dec82a252a0e76fb7c7598a5a  boot-752f8ef9c541acf2de5889cbbed88cd3e38c1e81.tar.gz
 "

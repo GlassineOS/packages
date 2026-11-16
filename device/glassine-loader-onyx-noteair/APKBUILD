@@ -1,0 +1,74 @@
+# Maintainer: Moritz Meißelbach <moritz@glassine.org>
+# The GlassineOS loader for the Onyx Boox Note Air, and its default splash. The device's
+# boot loader (the GlassineOS ABL) starts the loader from the raw boot partition
+# glassine-boot on slot B (GlassineOS/boot docs/handback.md); this package carries what
+# goes there and glassine-loader-update (glassine-deploy) writes it: at the first healthy
+# start after the healthy mark, and again at the next healthy start after an update that
+# brings another loader or splash (boot's specs/012 FR-026). The package writes nothing
+# itself: no install script touches a device (an image build runs those on its host).
+#
+#   /usr/share/glassine/loader/loader.efi          GlassineOS/loader's release asset
+#                                                  glassine-loader-aarch64.efi, pinned
+#                                                  by its SHA-256 (the release's
+#                                                  SHA256SUMS line), checked in check()
+#   /usr/share/glassine/loader/splash-default.gspl the default splash for the panel
+#                                                  (1404 x 1872 portrait, 8-bit grey):
+#                                                  the GlassineOS mark on white
+#                                                  (splash.py), encoded by that
+#                                                  release's gspl-encode
+#
+# A new loader is a new release there and a change of _loader, the checksums and
+# _loader_sha256 here. glassine-deploy 0.7.3 brings glassine-loader-update with the
+# record's raw-form writers (the healthy mark, the shutdown step): a loader is never
+# armed on a system that can't mark its starts healthy.
+pkgname=glassine-loader-onyx-noteair
+pkgver=0.3.1
+pkgrel=0
+_loader=v$pkgver
+_rel=https://github.com/GlassineOS/loader/releases/download/$_loader
+# the release's SHA256SUMS line for glassine-loader-aarch64.efi
+_loader_sha256=4c6d11b2226738dbfbb0aad9c7839b2da8780dc28bce0c585375b7024978a4c8
+pkgdesc="GlassineOS loader and default splash for the Onyx Boox Note Air's raw boot partition"
+url="https://github.com/GlassineOS/loader"
+arch="aarch64"
+# the loader is GPL-2.0-or-later and compiles in MIT and OFL-1.1 parts (NOTICES, installed)
+license="GPL-2.0-or-later AND MIT AND OFL-1.1"
+depends="glassine-deploy>=0.7.3"
+makedepends="python3"
+source="glassine-loader-aarch64-$pkgver.efi::$_rel/glassine-loader-aarch64.efi
+	gspl-encode-aarch64-$pkgver::$_rel/gspl-encode-aarch64-linux
+	NOTICES-aarch64-$pkgver.txt::$_rel/NOTICES-aarch64.txt
+	splash.py
+	"
+builddir="$srcdir"
+
+build() {
+	python3 -I "$srcdir"/splash.py 1404 1872 "$srcdir"/splash.pgm
+	install -m755 "$srcdir"/gspl-encode-aarch64-$pkgver "$srcdir"/gspl-encode
+	"$srcdir"/gspl-encode --layout grey8 --mode 1404x1872 --bg ffffff "$srcdir"/splash.pgm "$srcdir"/splash-default.gspl
+}
+
+check() {
+	[ "$(sha256sum < "$srcdir"/glassine-loader-aarch64-$pkgver.efi | cut -d' ' -f1)" = "$_loader_sha256" ] \
+		|| { echo "glassine-loader-aarch64.efi is not the release's ($_loader_sha256)"; return 1; }
+	# the loader region holds 1 to 3141632 bytes (boot's docs/handback.md)
+	[ "$(wc -c < "$srcdir"/glassine-loader-aarch64-$pkgver.efi)" -le 3141632 ]
+	# the splash as the loader reads it, at the panel's portrait size; it fits its region
+	"$srcdir"/gspl-encode --check "$srcdir"/splash-default.gspl | tee "$srcdir"/check.out
+	grep -q 'format=2 kind=picture size=1404x1872 mode=1404x1872 layout=grey8' "$srcdir"/check.out
+	[ "$(wc -c < "$srcdir"/splash-default.gspl)" -le 3145728 ]
+}
+
+package() {
+	install -Dm644 "$srcdir"/glassine-loader-aarch64-$pkgver.efi "$pkgdir"/usr/share/glassine/loader/loader.efi
+	install -Dm644 "$srcdir"/splash-default.gspl "$pkgdir"/usr/share/glassine/loader/splash-default.gspl
+	install -Dm644 "$srcdir"/NOTICES-aarch64-$pkgver.txt "$pkgdir"/usr/share/licenses/$pkgname/NOTICES.txt
+	printf 'loader=%s\nloader_sha256=%s\n' "$_loader" "$_loader_sha256" > "$pkgdir"/usr/share/glassine/loader/release
+}
+
+sha512sums="
+d2a325946b193ee98f8bb1514df5c8f0ac8530b52f645c5f958dd197dd67ab7a8f51317b39cc065d99548fd7b9ceaa992eb8c5add343166f407aefde162293b9  glassine-loader-aarch64-0.3.1.efi
+3da1bb5362a5ecf0f4e76c93c545179a027ec8e7c4e41a290274a295dc64dccbbe031518babd2333395cb0fd3fdf296865251a48e78e1dec00c15ebd8a78cfe2  gspl-encode-aarch64-0.3.1
+4f5bad9d0e7acc92024bead12da837cd407425a349f3f8eb32fc1fc6f98fb759ab794d5eed27cd7e6c77d35d78975e465daa7db4075a5df632531c8da843a10b  NOTICES-aarch64-0.3.1.txt
+52a85d6c051b6188936229f12b5d19b1c3f550a6c26cfff4416a3fea0bf1d8e8c288a60e2bbec630c959b438f32b671070df4ae3de942f4d378157d66a1b4e31  splash.py
+"

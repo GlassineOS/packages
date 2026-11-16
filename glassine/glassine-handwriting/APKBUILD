@@ -17,9 +17,9 @@
 pkgname=glassine-handwriting
 pkgver=0_git20261116
 # GlassineOS/handwriting main
-_commit=1c9ab270994c9a9970652ed2d1d430d57883a465
+_commit=ebe894018190dbfb4c0294275ad935f431e0c700
 _gf=https://raw.githubusercontent.com/google/fonts/0b58fb370093f9a9f4ff785d94405710b79de67c/ofl
-pkgrel=4
+pkgrel=5
 pkgdesc="GlassineOS handwriting recognizer"
 url="https://github.com/GlassineOS/handwriting"
 arch="all"
@@ -88,7 +88,7 @@ samples() {
 }
 
 sha512sums="
-49eee4812670df7cad44faaea25bc1527aecda8a6cc3d9ac9520eb4cac5fe8f0f3e84082d56b24a78a4ebadddb682d6053720a34329663deb95f4c90d7748ed2  handwriting-1c9ab270994c9a9970652ed2d1d430d57883a465.tar.gz
+9aa5fcf7f2025bca6254930f01c8939e485d5e94151b303892d21df9e667b1851e1a1de82764a7dbbe32770ac4e1c1a8dc5f92c6d65a1166943671a3bc7045ae  handwriting-ebe894018190dbfb4c0294275ad935f431e0c700.tar.gz
 9c48be00cf86765639724b93e4f3525330c93cea4825d0cff19cd43d52b0317db764b5173055210cdb303c2857bf426dd3c86f113fc45fbe0ab75888a79334db  Kalam-Regular.ttf
 eae53aa2ac365f68cf77751d2ceca71b7ac78d48bd606a987754742926caeafb811e9bc1b9c69183a83f971a7c9cc388c56195392a87486aa167186e691f1eab  Kalam-OFL.txt
 "

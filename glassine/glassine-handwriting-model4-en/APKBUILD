@@ -1,0 +1,41 @@
+# Maintainer: Moritz Meißelbach <moritz@glassine.org>
+# English base model 4 of glassine-handwriting, for a trial beside the default model
+# (glassine-handwriting-model-en): installed in a directory of its own,
+# /usr/share/glassine/handwriting-model-4/en/, with the same character model, so it
+# changes nothing until the recognizer's setting names that directory. To read with it,
+# in ~/.config/glassine/handwriting.conf:
+#   models = /usr/share/glassine/handwriting-model-4
+# and to go back, remove the line. Adaptations made with it are kept apart from the default
+# model's (docs/recognizer.md, Base models); it gets its own at the next adaptation run
+# (glassine-handwriting adapt -f to start one at once). Model 4 is ghm version 2 and needs a
+# recognizer that reads it and has the setting.
+# The model is trained by hand and published as the release asset model-en-4 of
+# GlassineOS/handwriting (models/README.md); its README has the recipe, data and results.
+# Licences: the model GPL-2.0-or-later (synthetic ink from OFL and Apache-2.0 fonts and
+# public-domain text and names; it holds none of them), the character model
+# GPL-2.0-or-later, prompts.txt CC0-1.0; LICENSES lists all.
+pkgname=glassine-handwriting-model4-en
+pkgver=4
+pkgrel=0
+_chars_en=1
+pkgdesc="Handwriting recognition model 4 of GlassineOS (English, for a trial)"
+url="https://github.com/GlassineOS/handwriting"
+arch="noarch"
+license="GPL-2.0-or-later AND CC0-1.0"
+depends="glassine-handwriting>=0_git20261117"
+options="!check" # a release is checked against the recognizer (make check-model) before it is published
+source="glassine-handwriting-model-en-$pkgver.tar.gz::$url/releases/download/model-en-$pkgver/glassine-handwriting-model-en-$pkgver.tar.gz
+	glassine-handwriting-chars-en-$_chars_en.tar.gz::$url/releases/download/chars-en-$_chars_en/glassine-handwriting-chars-en-$_chars_en.tar.gz
+	"
+builddir="$srcdir"
+
+package() {
+	local d="$pkgdir"/usr/share/glassine/handwriting-model-$pkgver/en
+	install -Dm644 "$srcdir/glassine-handwriting-model-en-$pkgver"/* -t "$d"/
+	install -Dm644 "$srcdir/glassine-handwriting-chars-en-$_chars_en"/* -t "$d"/
+}
+
+sha512sums="
+923b71a3c15af30e02d7bb22c757a06aa80adce469e78f3598675355b6e064374435858c820a7f27e9ea284bdd561284baf2a73e78788ec1df7ab71049458d95  glassine-handwriting-model-en-4.tar.gz
+6b332f956b6760992fdf7b2b5267700e8bf97f1517c8e1404ddebdc542d8fc0917bc3c817a8a0519b6e3af90f7661c2a9a95b98eba528a3a13a467893e7ac4e5  glassine-handwriting-chars-en-1.tar.gz
+"

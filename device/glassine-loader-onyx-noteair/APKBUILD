@@ -20,20 +20,21 @@
 # A new loader is a new release there and a change of _loader, the checksums and
 # _loader_sha256 here. glassine-deploy 0.7.3 brings glassine-loader-update with the
 # record's raw-form writers (the healthy mark, the shutdown step): a loader is never
-# armed on a system that can't mark its starts healthy.
+# armed on a system that can't mark its starts healthy. glassine-deploy 0.8.0 brings
+# what loader 0.4 reads: the deployment list, the board's touch, parent and other keys.
 pkgname=glassine-loader-onyx-noteair
-pkgver=0.3.1
+pkgver=0.4.1
 pkgrel=0
 _loader=v$pkgver
 _rel=https://github.com/GlassineOS/loader/releases/download/$_loader
 # the release's SHA256SUMS line for glassine-loader-aarch64.efi
-_loader_sha256=4c6d11b2226738dbfbb0aad9c7839b2da8780dc28bce0c585375b7024978a4c8
+_loader_sha256=bec20bc774259f13105852aff812bca0cd79ab13583aa31aac24051b25b316cb
 pkgdesc="GlassineOS loader and default splash for the Onyx Boox Note Air's raw boot partition"
 url="https://github.com/GlassineOS/loader"
 arch="aarch64"
 # the loader is GPL-2.0-or-later and compiles in MIT and OFL-1.1 parts (NOTICES, installed)
 license="GPL-2.0-or-later AND MIT AND OFL-1.1"
-depends="glassine-deploy>=0.7.3"
+depends="glassine-deploy>=0.8.0"
 makedepends="python3"
 source="glassine-loader-aarch64-$pkgver.efi::$_rel/glassine-loader-aarch64.efi
 	gspl-encode-aarch64-$pkgver::$_rel/gspl-encode-aarch64-linux
@@ -67,8 +68,8 @@ package() {
 }
 
 sha512sums="
-d2a325946b193ee98f8bb1514df5c8f0ac8530b52f645c5f958dd197dd67ab7a8f51317b39cc065d99548fd7b9ceaa992eb8c5add343166f407aefde162293b9  glassine-loader-aarch64-0.3.1.efi
-3da1bb5362a5ecf0f4e76c93c545179a027ec8e7c4e41a290274a295dc64dccbbe031518babd2333395cb0fd3fdf296865251a48e78e1dec00c15ebd8a78cfe2  gspl-encode-aarch64-0.3.1
-4f5bad9d0e7acc92024bead12da837cd407425a349f3f8eb32fc1fc6f98fb759ab794d5eed27cd7e6c77d35d78975e465daa7db4075a5df632531c8da843a10b  NOTICES-aarch64-0.3.1.txt
+1483eec9e106dcaff8769934fad4931de04b59a18a50b9f7674eee294f28709f91a29cfd9ff85620c38cd5f7b6202adf5778cbeffd8067a85e496c463277e6e7  glassine-loader-aarch64-0.4.1.efi
+e465c9da2c854d1638650f7fb14a524b3f6051fa8c4adf905c75a328060f78e4f23d6fca84cff0e5511e4b917228903c43e0f498c5c6bc719a4c774d27b691a3  gspl-encode-aarch64-0.4.1
+4f5bad9d0e7acc92024bead12da837cd407425a349f3f8eb32fc1fc6f98fb759ab794d5eed27cd7e6c77d35d78975e465daa7db4075a5df632531c8da843a10b  NOTICES-aarch64-0.4.1.txt
 52a85d6c051b6188936229f12b5d19b1c3f550a6c26cfff4416a3fea0bf1d8e8c288a60e2bbec630c959b438f32b671070df4ae3de942f4d378157d66a1b4e31  splash.py
 "

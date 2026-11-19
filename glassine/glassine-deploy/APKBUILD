@@ -28,6 +28,10 @@
 # does nothing. glassine-loader-mark request menu|recovery|clear (0.7.4): the
 # one-shot request for the next start (boot's docs/boot-partition.md "Keys"), and
 # can-request, the desktop's check before it offers the start menu.
+# glassine-deploy publish (0.8.0): the loader record's deployment list for the start
+# menu (glassine-loader-mark deploys), after every command that changes the
+# deployments and on a healthy start; display-sync also writes the board's
+# LOADER_TOUCH, LOADER_PARENT_CMDLINE, LOADER_PARENT_SETS and LOADER_OTHER.
 # glassine-bootimg (a subpackage, same source): kernel updates in the deployments
 # layout (install, reboot-test, accept, rollback, the verdict at boot by the
 # glassine-bootimg-promote service), with the board's hand-off from
@@ -38,9 +42,9 @@
 # (bootpart-test) and the block-list tool need python3, which this package doesn't pull
 # in: the uefi hand-off is shell only.
 pkgname=glassine-deploy
-pkgver=0.7.4
+pkgver=0.8.0
 # GlassineOS/boot main
-_commit=752f8ef9c541acf2de5889cbbed88cd3e38c1e81
+_commit=fe79402b2741c82d7b99498e13c262e6de427b7b
 pkgrel=0
 pkgdesc="GlassineOS deployments: read-only bases, tried updates, reset, hibernation"
 url="https://github.com/GlassineOS/boot"
@@ -101,5 +105,5 @@ _bootimg() {
 }
 
 sha512sums="
-2665d8f8c0f19eda52e03496544fcc98ac2f129374a0686ffe64ddde13efa72a85a8fe3531b7733c14b2e8e346dc673fc86c1f4dec82a252a0e76fb7c7598a5a  boot-752f8ef9c541acf2de5889cbbed88cd3e38c1e81.tar.gz
+c81ab8dc20d4cbe7cf54d7daa7c9026bd291e1476ca44d000d49b219a3187a3e6de07cce8a76b72d317e24c1aec81963b3e29ede1ca50121ec62cfbdceb9a506  boot-fe79402b2741c82d7b99498e13c262e6de427b7b.tar.gz
 "

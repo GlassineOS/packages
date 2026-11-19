@@ -23,12 +23,12 @@
 # armed on a system that can't mark its starts healthy. glassine-deploy 0.8.0 brings
 # what loader 0.4 reads: the deployment list, the board's touch, parent and other keys.
 pkgname=glassine-loader-onyx-noteair
-pkgver=0.4.1
+pkgver=0.5.0
 pkgrel=0
 _loader=v$pkgver
 _rel=https://github.com/GlassineOS/loader/releases/download/$_loader
 # the release's SHA256SUMS line for glassine-loader-aarch64.efi
-_loader_sha256=bec20bc774259f13105852aff812bca0cd79ab13583aa31aac24051b25b316cb
+_loader_sha256=2d5aefbb32efcab6e2b59811756fa182f819df9b741c9093925a473c067ba877
 pkgdesc="GlassineOS loader and default splash for the Onyx Boox Note Air's raw boot partition"
 url="https://github.com/GlassineOS/loader"
 arch="aarch64"
@@ -68,8 +68,8 @@ package() {
 }
 
 sha512sums="
-1483eec9e106dcaff8769934fad4931de04b59a18a50b9f7674eee294f28709f91a29cfd9ff85620c38cd5f7b6202adf5778cbeffd8067a85e496c463277e6e7  glassine-loader-aarch64-0.4.1.efi
-e465c9da2c854d1638650f7fb14a524b3f6051fa8c4adf905c75a328060f78e4f23d6fca84cff0e5511e4b917228903c43e0f498c5c6bc719a4c774d27b691a3  gspl-encode-aarch64-0.4.1
-4f5bad9d0e7acc92024bead12da837cd407425a349f3f8eb32fc1fc6f98fb759ab794d5eed27cd7e6c77d35d78975e465daa7db4075a5df632531c8da843a10b  NOTICES-aarch64-0.4.1.txt
+6a1cbcc1778ef09a90e0f25c78935334cd9c763f23916a9fbe928da88f7cbf3fdba77d1064ef46b956f812a2e8995c5122374a0af6405349fe0d2dff393e7864  glassine-loader-aarch64-0.5.0.efi
+f11331497cb3231f4a68a7b66822ac5c36ab24fdbbf940022b88a875a8d4557cf7d45a4457328cad359dd16d8ab3af1836f03de088924a502ad55270aafda308  gspl-encode-aarch64-0.5.0
+aacc54d8a17e0d88d08d84eef582ab9056bc84959aae7596434826119c4efb5d749d587bcf5c47d831986b293a8f393eebee31026a7ae6b6fb27dff44734aad6  NOTICES-aarch64-0.5.0.txt
 52a85d6c051b6188936229f12b5d19b1c3f550a6c26cfff4416a3fea0bf1d8e8c288a60e2bbec630c959b438f32b671070df4ae3de942f4d378157d66a1b4e31  splash.py
 "

@@ -7,4 +7,11 @@ rc-update add glassine-deploy-accept default >/dev/null 2>&1
 rc-update add glassine-hibernate-setup default >/dev/null 2>&1
 # the first start of an installed system (does nothing without the install marker)
 rc-update add glassine-first-start boot >/dev/null 2>&1
+# a soft restart (glassine-deploy restart): its stop keeps the watchdog fed, and busybox
+# init's restart action enters the kept assembly; an inittab another package wrote keeps
+# its lines
+rc-update add glassine-restart shutdown >/dev/null 2>&1
+if [ -f /etc/inittab ] && ! grep -q '^::restart:' /etc/inittab; then
+	echo '::restart:/usr/lib/glassine-boot/soft-start' >> /etc/inittab
+fi
 exit 0

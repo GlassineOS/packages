@@ -4,4 +4,6 @@ rc-update del glassine-mount-ro shutdown >/dev/null 2>&1
 rc-update del glassine-deploy-accept default >/dev/null 2>&1
 rc-update del glassine-hibernate-setup default >/dev/null 2>&1
 rc-update del glassine-first-start boot >/dev/null 2>&1
+rc-update del glassine-restart shutdown >/dev/null 2>&1
+[ ! -f /etc/inittab ] || sed -i '\#^::restart:/usr/lib/glassine-boot/soft-start$#d' /etc/inittab
 exit 0

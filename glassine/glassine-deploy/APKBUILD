@@ -32,6 +32,13 @@
 # menu (glassine-loader-mark deploys), after every command that changes the
 # deployments and on a healthy start; display-sync also writes the board's
 # LOADER_TOUCH, LOADER_PARENT_CMDLINE, LOADER_PARENT_SETS and LOADER_OTHER.
+# glassine-deploy restart (0.9.0, boot's specs/013): a soft restart where the rules allow
+# (PID 1 re-enters the kept initramfs assembly: no firmware, no loader, no kernel start),
+# else cold. Needs busybox init with the line
+# ::restart:/usr/lib/glassine-boot/soft-start in /etc/inittab (added on install, only
+# where /etc/inittab exists) and an initramfs from boot at the same or a later commit
+# (older ones keep no assembly: every restart is cold). glassine-restart (shutdown): the
+# watchdog fed through a soft restart's stop.
 # glassine-bootimg (a subpackage, same source): kernel updates in the deployments
 # layout (install, reboot-test, accept, rollback, the verdict at boot by the
 # glassine-bootimg-promote service), with the board's hand-off from
@@ -42,9 +49,9 @@
 # (bootpart-test) and the block-list tool need python3, which this package doesn't pull
 # in: the uefi hand-off is shell only.
 pkgname=glassine-deploy
-pkgver=0.8.0
+pkgver=0.9.0
 # GlassineOS/boot main
-_commit=fe79402b2741c82d7b99498e13c262e6de427b7b
+_commit=b5100d3c860b3f14abf284f31e382b7aea37aab0
 pkgrel=0
 pkgdesc="GlassineOS deployments: read-only bases, tried updates, reset, hibernation"
 url="https://github.com/GlassineOS/boot"
@@ -73,10 +80,11 @@ package() {
 		install -Dm755 sbin/$f "$pkgdir"/usr/sbin/$f
 	done
 	for f in glassine-switch glassine-mount-ro glassine-deploy-accept glassine-device-seed glassine-devmode \
-		glassine-hibernate-setup glassine-first-start; do
+		glassine-hibernate-setup glassine-first-start glassine-restart; do
 		install -Dm755 openrc/$f "$pkgdir"/etc/init.d/$f
 	done
 	ln -s glassine "$pkgdir"/usr/sbin/apk
+	install -Dm755 libexec/soft-start "$pkgdir"/usr/lib/glassine-boot/soft-start
 	for f in glassine-state.sh glassine-root.sh glassine-accounts.sh glassine-device.sh glassine-bootpart.sh; do
 		install -Dm644 lib/$f "$pkgdir"/usr/lib/glassine-boot/$f
 	done
@@ -105,5 +113,5 @@ _bootimg() {
 }
 
 sha512sums="
-c81ab8dc20d4cbe7cf54d7daa7c9026bd291e1476ca44d000d49b219a3187a3e6de07cce8a76b72d317e24c1aec81963b3e29ede1ca50121ec62cfbdceb9a506  boot-fe79402b2741c82d7b99498e13c262e6de427b7b.tar.gz
+965c4cddf5d178a683edc69b01385ab948a565704a2e31b231ef285469f754e932b97eb62aaa2d083946cd12648b98d5d3e70e766b6fefe715a5e99efac06f59  boot-b5100d3c860b3f14abf284f31e382b7aea37aab0.tar.gz
 "

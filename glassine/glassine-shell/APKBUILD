@@ -13,9 +13,9 @@
 # btrfs-progs (glassine-zram's compressed spill; a plain file without it).
 # The glassine-zram service isn't enabled here: an image adds it to a runlevel.
 pkgname=glassine-shell
-pkgver=0_git20261120
+pkgver=0_git20261121
 # GlassineOS/shell main
-_commit=22dba0e95bba9f223dfbc578b3e1680ac325d63e
+_commit=ba878ebf9e1f80a80be144bad4a17e6b706f8661
 # google/fonts, as in the shell's fonts/fetch-fonts.sh
 _gf=https://raw.githubusercontent.com/google/fonts/0b58fb370093f9a9f4ff785d94405710b79de67c/ofl
 pkgrel=0
@@ -119,7 +119,7 @@ fonts() {
 }
 
 sha512sums="
-d897746e0b9b6b33dcf3375eb79426c7bab8ab46a3c0b7d6111f73553ea5db050616d30d8ae6617bdecb4dd9e22b85217d53fa82969818adcdc549c8f35cab97  shell-22dba0e95bba9f223dfbc578b3e1680ac325d63e.tar.gz
+b083393f1e9d7b48bddbe989e0749d30ce210fa4ecc82187838d8938a7a13ba5164639c0b79066ff0cc69a1edfe8e68d10beed78899a2046ce36d4aa2333e9fe  shell-ba878ebf9e1f80a80be144bad4a17e6b706f8661.tar.gz
 f6227ae0b96a951e5282babc44864893e92d12f6dcfe8c8bd7b548ca0f239bc71fc88ad17ddb5de45fc36a38896e1dbe1075a3260562a13db733a18e820f1442  IBMPlexSans-VF.ttf
 cea00ba67a618a50f318ed0baa07085e1dffe1ab90875ed7b5295d81040a62b6d71f08b1c416d78c0ebff324676c778855ac90d595082a8eb222dc7afb31d552  IBMPlexMono-Regular.ttf
 8bc228f89d2045902e2dc71387a6bef978d6b1f27467c5419f0d405803d5037f0c157ec2dd40d95bcc5b93d9f17e59c0c00701f88a1ffb18a9050d2564cf19a2  IBMPlexMono-Medium.ttf

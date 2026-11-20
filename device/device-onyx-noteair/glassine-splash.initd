@@ -23,10 +23,15 @@ start() {
 
 # On a power-off only (a reboot gets the boot splash): BusyBox init runs the same
 # shutdown for both, so glassine-power-root marks a power-off in
-# /run/glassine-poweroff. The session has stopped by now, but give the panel
-# daemon a moment to let go.
+# /run/glassine-poweroff, and poweroff (glassine-reboot) in the shutdown record
+# (next=poweroff). Not when the shutdown screen (GlassineOS/shell's
+# glassine-shutdown-screen) already put "Powered off" on the panel and held it: it
+# left /run/glassine-shutdown-screen, and the panel keeps it. The session has stopped
+# by now, but give the panel daemon a moment to let go.
 stop() {
-	[ "$RC_RUNLEVEL" = shutdown ] && [ -e /run/glassine-poweroff ] && [ -r $IMG ] || return 0
+	[ "$RC_RUNLEVEL" = shutdown ] && [ ! -e /run/glassine-shutdown-screen ] && [ -r $IMG ] || return 0
+	[ -e /run/glassine-poweroff ] ||
+		[ "$(sed -n 's/^next=//p' /run/glassine/shutdown 2>/dev/null | tail -n 1)" = poweroff ] || return 0
 	ebegin "Showing the e-ink power-off screen"
 	i=0; while pidof glassine-epdd-desktop glassine-epdd >/dev/null && [ $i -lt 20 ]; do sleep 0.25; i=$((i + 1)); done
 	timeout 20 /usr/sbin/glassine-epd-show $IMG 2 "POWERED OFF"

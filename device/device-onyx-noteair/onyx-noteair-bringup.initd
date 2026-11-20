@@ -2,8 +2,10 @@
 # The Onyx Boox Note Air's modem, ADSP, WiFi, Bluetooth and sound card, in that
 # order, then the modem's crash-loop breaker (onyx-noteair-bringup). The bring-up
 # takes up to a few minutes and runs in the background; the service's process is
-# the breaker. Log: /var/log/onyx-noteair-bringup.log. Stopping it stops rmtfs,
-# and with it the modem.
+# the breaker. Log: /var/log/onyx-noteair-bringup.log. Stopping it detaches WiFi
+# from its driver and then stops rmtfs, and with it the modem; starting it again
+# while the kernel kept running (a soft restart) attaches WiFi again once the modem
+# runs.
 description="Onyx Boox Note Air modem, ADSP, WiFi, Bluetooth and sound card"
 
 command=/usr/sbin/onyx-noteair-bringup

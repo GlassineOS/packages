@@ -29,6 +29,7 @@
 # need this: hci_uart drives the WCN3990's Bluetooth over its UART and loads its
 # firmware itself, nothing of it runs on the modem.
 set -u
+WSLEEP=
 SYS=${GLASSINE_BRINGUP_SYS:-/sys}
 DEV=${GLASSINE_BRINGUP_DEV:-/dev}
 PROC=${GLASSINE_BRINGUP_PROC:-/proc}
@@ -325,7 +326,9 @@ watch() {
 	while :; do
 		[ "$max" -gt 0 ] && [ $i -ge "$max" ] && break
 		i=$((i + 1))
-		sleep 5
+		# in the background, waited for: a TERM (run's trap) ends the wait at once
+		sleep 5 & WSLEEP=$!
+		wait $WSLEEP
 		# a daemon that died (its pid file is there, the process isn't) is started again
 		for d in qrtr-diag-sink tqftpserv rmtfs; do
 			if [ -e "$RUN/$d.pid" ] && ! alive "$RUN/$d.pid"; then
@@ -358,7 +361,8 @@ run() {
 	mkdir -p "$RUN"
 	up &
 	echo $! > "$RUN/up.pid"
-	trap 'kill "$(cat "$RUN/up.pid")" 2>/dev/null; exit 0' TERM INT
+	# a stop ends the bring-up and the breaker's wait at once (WSLEEP: watch's sleep)
+	trap 'kill "$(cat "$RUN/up.pid")" ${WSLEEP:-} 2>/dev/null; exit 0' TERM INT
 	watch
 }
 

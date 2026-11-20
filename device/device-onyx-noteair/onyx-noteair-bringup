@@ -7,7 +7,8 @@
 #                                 step runs anyway. Safe to run again: it loads WiFi
 #                                 again after the breaker unloaded it
 #   onyx-noteair-bringup watch    the breaker (and a dead daemon is started again)
-#   onyx-noteair-bringup down     stop rmtfs (which stops the modem), tqftpserv, the sink
+#   onyx-noteair-bringup down     detach WiFi, then stop rmtfs (which stops the modem),
+#                                 tqftpserv, the sink
 #   onyx-noteair-bringup status
 #
 # The WCN3990 WiFi runs on the modem, so the modem comes first. Firmware comes from
@@ -19,6 +20,14 @@
 #
 # ath10k_snoc and hci_uart are not loaded by the device manager (modprobe.d), so
 # WiFi starts only once the modem runs and the diag sink is up, and Bluetooth after it.
+#
+# The kernel can outlive this service (a soft restart stops and starts userspace only),
+# and ath10k_snoc does not recover when the modem is stopped and started under it
+# (every later start of the firmware times out). So down detaches the WiFi device from
+# its driver before the modem stops, and up attaches it again once the modem runs;
+# after a cold boot the driver isn't loaded yet and up just loads it. Bluetooth doesn't
+# need this: hci_uart drives the WCN3990's Bluetooth over its UART and loads its
+# firmware itself, nothing of it runs on the modem.
 set -u
 SYS=${GLASSINE_BRINGUP_SYS:-/sys}
 DEV=${GLASSINE_BRINGUP_DEV:-/dev}
@@ -84,6 +93,18 @@ adsp_running() { local r; r=$(rproc_named adsp) && rproc_running "$r"; }
 wlan_present() { [ -e "$SYS/class/net/wlan0" ]; }
 hci_present() { [ -e "$SYS/class/bluetooth/hci0" ]; }
 card_present() { card_index >/dev/null; }
+
+WIFI_DRV=$SYS/bus/platform/drivers/ath10k_snoc
+# the WCN3990's WiFi device (18800000.wifi), found by its compatible
+wifi_dev() {
+	local d
+	for d in "$SYS"/bus/platform/devices/*; do
+		case $(cat "$d/modalias" 2>/dev/null) in
+		*Cqcom,wcn3990-wifi*) echo "${d##*/}"; return 0 ;;
+		esac
+	done
+	return 1
+}
 
 alive() { [ -s "$1" ] && kill -0 "$(cat "$1")" 2>/dev/null; }
 
@@ -162,7 +183,17 @@ step_adsp() {
 }
 
 step_wifi() {
-	mods ath10k_snoc || return 1
+	local d
+	if [ -d "$WIFI_DRV" ] && d=$(wifi_dev) && [ ! -e "$WIFI_DRV/$d" ]; then
+		# the driver is loaded and the device detached (down, or the hibernation's
+		# hook): attach it once the modem runs; a bind before that comes up half way
+		wait_for 30 "the modem running, for WiFi" modem_running || return 1
+		[ -e "$WIFI_DRV/$d" ] || echo "$d" > "$WIFI_DRV/bind" \
+			|| { log "attaching $d to ath10k_snoc failed"; return 1; }
+		log "WiFi attached again ($d)"
+	else
+		mods ath10k_snoc || return 1
+	fi
 	wait_for 30 "wlan0" wlan_present && log "wlan0 up"
 }
 
@@ -331,7 +362,16 @@ run() {
 	watch
 }
 
+# WiFi off its driver before the modem stops (see the top)
+wifi_detach() {
+	local d
+	d=$(wifi_dev) && [ -e "$WIFI_DRV/$d" ] || return 0
+	echo "$d" > "$WIFI_DRV/unbind" && log "WiFi detached ($d)" \
+		|| { log "detaching $d from ath10k_snoc failed"; return 1; }
+}
+
 down() {
+	wifi_detach
 	stop_daemon rmtfs
 	stop_daemon tqftpserv
 	stop_daemon qrtr-diag-sink

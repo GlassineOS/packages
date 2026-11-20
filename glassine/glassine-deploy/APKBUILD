@@ -47,6 +47,8 @@
 # 0.9.3 (boot#96): a base's version is its image version (version= of its base
 # manifest, YYYY.MM.DD), else its os-release VERSION_ID; start menu labels that would
 # read the same also carry the created time (HH:MM, or HH:MM:SS).
+# 0.9.4 (boot#97): the start menu label is the base's version alone (no date; the
+# date stays in glassine-deploy list), plus the created time where labels clash.
 # glassine-bootimg (a subpackage, same source): kernel updates in the deployments
 # layout (install, reboot-test, accept, rollback, the verdict at boot by the
 # glassine-bootimg-promote service), with the board's hand-off from
@@ -57,9 +59,9 @@
 # (bootpart-test) and the block-list tool need python3, which this package doesn't pull
 # in: the uefi hand-off is shell only.
 pkgname=glassine-deploy
-pkgver=0.9.3
+pkgver=0.9.4
 # GlassineOS/boot main
-_commit=cfa77a6d25a7e503d61ce0f8a6b63e5fc730c913
+_commit=8db2caa36fe3a4e1820a637aa584c1bfcb4cf27f
 pkgrel=0
 pkgdesc="GlassineOS deployments: read-only bases, tried updates, reset, hibernation"
 url="https://github.com/GlassineOS/boot"
@@ -121,5 +123,5 @@ _bootimg() {
 }
 
 sha512sums="
-017d39c78b9994a29dc554f6db566f4bdcf85eb64bdd4790956b7c978bf642d60b3cca4d7c147c52959cf2d23a247250bafc4ab29f73016dbcbf03597bb59870  boot-cfa77a6d25a7e503d61ce0f8a6b63e5fc730c913.tar.gz
+c10ff06fa20d12dc0ed7fa32ae86d5cfb5e20a0761f889a85c8fcd402f342f685fc78c0ca334df9b6dbebbd8b12c32b779e31c4bfbe5852619ba13d5540efaf0  boot-8db2caa36fe3a4e1820a637aa584c1bfcb4cf27f.tar.gz
 "

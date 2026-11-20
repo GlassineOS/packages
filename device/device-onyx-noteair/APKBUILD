@@ -26,7 +26,7 @@
 # (with its modprobe.d file and the speaker and microphone routing).
 pkgname=device-onyx-noteair
 pkgver=4
-pkgrel=7
+pkgrel=8
 builddir="$srcdir"
 pkgdesc="Onyx Boox Note Air: system services, device data list, modem, radios and sound"
 url="https://github.com/GlassineOS/packages"
@@ -285,7 +285,9 @@ _check_health() {
 # and session, and stand-ins on PATH for every command that touches the hardware or
 # a daemon (they log their calls to $B/calls). The sleep stand-in returns at once,
 # turns a remoteproc state "start" into "running" and moves the kernel log and the
-# uptime on to the next round's files (dmesg.N, uptime.N).
+# uptime on to the next round's files (dmesg.N, uptime.N). The kernel stand-in (kern,
+# run by sleep and start-stop-daemon) carries out what was written to ath10k_snoc's
+# bind and unbind and logs it with the modem's state.
 _check_bringup() {
 	local B="$1" rc s P W bin="$1/bin"
 	_bt_tree() {
@@ -301,6 +303,8 @@ _check_bringup() {
 		echo adsp > "$r/remoteproc1/name"
 		echo 'of:NremoteprocT(null)Cqcom,sdm660-adsp-pas' > "$r/remoteproc1/device/modalias"
 		echo offline > "$r/remoteproc1/state"
+		mkdir -p "$B/sys/bus/platform/devices/18800000.wifi"
+		echo 'of:NwifiT(null)Cqcom,wcn3990-wifi' > "$B/sys/bus/platform/devices/18800000.wifi/modalias"
 		for p in modemst1 modemst2 fsc fsg; do head -c 4096 /dev/urandom > "$B/parts/$p"; done
 		(cd "$B/parts" && sha256sum modemst1 modemst2 fsc fsg) > "$B/parts.sha"
 		echo "100.00 50.00" > "$B/proc/uptime"; : > "$B/dmesg"; : > "$B/calls"; echo 0 > "$B/round"
@@ -310,7 +314,10 @@ _check_bringup() {
 		grep -qx "$1" "$B/fail_modules" 2>/dev/null && exit 1
 		case $1 in
 		rmtfs_mem) : > "$B/dev/qcom_rmtfs_mem1" ;;
-		ath10k_snoc) mkdir -p "$B/sys/class/net/wlan0" ;;
+		ath10k_snoc)
+			w=$B/sys/bus/platform/drivers/ath10k_snoc
+			[ -d "$w" ] && exit 0
+			mkdir -p "$w/18800000.wifi" "$B/sys/class/net/wlan0"; : > "$w/bind"; : > "$w/unbind" ;;
 		hci_uart) mkdir -p "$B/sys/class/bluetooth/hci0" ;;
 		snd-soc-sm8250) printf ' 0 [NoteAir        ]: sdm660 - Onyx Note Air\n                      Onyx Note Air\n' > "$B/proc/asound/cards" ;;
 		esac
@@ -328,17 +335,34 @@ _check_bringup() {
 			shift
 		done
 		n=$(basename "$pf" .pid)
+		kern
 		echo "ssd $act $n $exe $args" >> "$B/calls"
 		if [ $act = start ]; then
 			/bin/sleep 300 & echo $! > "$pf"
-			[ $n = rmtfs ] && echo running > "$B/sys/class/remoteproc/remoteproc0/state"
+			[ $n = rmtfs ] && [ ! -e "$B/modem_stays_offline" ] && echo running > "$B/sys/class/remoteproc/remoteproc0/state"
 		else
+			[ $n = rmtfs ] && echo offline > "$B/sys/class/remoteproc/remoteproc0/state"
 			kill "$(cat "$pf")"
+		fi
+		exit 0
+		S
+		cat > "$bin/kern" <<-'S'
+		#!/bin/sh
+		w=$B/sys/bus/platform/drivers/ath10k_snoc m=$(cat "$B/sys/class/remoteproc/remoteproc0/state")
+		[ -d "$w" ] || exit 0
+		if [ -s "$w/unbind" ]; then
+			d=$(cat "$w/unbind"); : > "$w/unbind"
+			echo "kernel unbind $d (modem $m)" >> "$B/calls"; rm -rf "${w:?}/$d" "$B/sys/class/net/wlan0"
+		fi
+		if [ -s "$w/bind" ]; then
+			d=$(cat "$w/bind"); : > "$w/bind"
+			echo "kernel bind $d (modem $m)" >> "$B/calls"; mkdir -p "$w/$d" "$B/sys/class/net/wlan0"
 		fi
 		exit 0
 		S
 		cat > "$bin/sleep" <<-'S'
 		#!/bin/sh
+		kern
 		for s in "$B"/sys/class/remoteproc/*/state; do [ "$(cat "$s")" = start ] && echo running > "$s"; done
 		n=$(( $(cat "$B/round") + 1 )); echo $n > "$B/round"
 		[ -f "$B/dmesg.$n" ] && cp "$B/dmesg.$n" "$B/dmesg"
@@ -387,6 +411,8 @@ _check_bringup() {
 	grep -q "^wpctl status /run/user/1000" "$B/calls" && grep -q "WirePlumber has the sound card" "$B/log" \
 		&& ! grep -q '^setsid' "$B/calls" && kill -0 "$W" || { echo "bringup: WirePlumber with the card restarted"; return 1; }
 	grep -q "up: done$" "$B/log" || { echo "bringup: no done line"; return 1; }
+	# a cold boot: WiFi's module loaded fresh, nothing bound or unbound by hand
+	! grep -q '^kernel' "$B/calls" || { echo "bringup: a cold boot bound WiFi by hand"; cat "$B/calls"; return 1; }
 	# the Bluetooth address: made once (random static: the top two bits set), then set
 	a=$(cat "$B/bt-address")
 	echo "$a" | grep -qx '[c-f][0-9a-f]\(:[0-9a-f][0-9a-f]\)\{5\}' && grep -q "^btmgmt --index 0 public-addr $a$" "$B/calls" \
@@ -397,10 +423,29 @@ _check_bringup() {
 	cmp -s "$B/fsg.orig" "$B/run/efs/modem_fsg" && ! grep -q '^ssd start' "$B/calls" && [ "$(at 'modprobe ath10k_snoc')" != 0 ] \
 		|| { echo "bringup: up again redid the copies or the daemons, or skipped WiFi"; cat "$B/calls"; return 1; }
 	bu status && grep -q "^rmtfs: running" "$B/log" && grep -q "^sound card: 0" "$B/log" || { echo "bringup: status"; return 1; }
-	# down: every daemon stopped, rmtfs first
+	# down: WiFi detached while the modem still runs, then every daemon stopped, rmtfs first
 	: > "$B/calls"; bu down
-	[ "$(at 'ssd stop rmtfs')" = 1 ] && [ "$(grep -c '^ssd stop' "$B/calls")" = 3 ] && ! ls "$B"/run/*.pid >/dev/null 2>&1 \
+	[ "$(at 'kernel unbind 18800000.wifi (modem running)')" = 1 ] && [ "$(at 'ssd stop rmtfs')" = 2 ] \
+		&& [ "$(grep -c '^ssd stop' "$B/calls")" = 3 ] && ! ls "$B"/run/*.pid >/dev/null 2>&1 \
+		&& [ ! -e "$B/sys/bus/platform/drivers/ath10k_snoc/18800000.wifi" ] \
 		|| { echo "bringup: down"; cat "$B/calls"; return 1; }
+	# up after down (a soft restart: the kernel and its loaded modules stayed): WiFi
+	# attached again once the modem runs, not loaded again
+	: > "$B/calls"; : > "$B/log"
+	bu up || { echo "bringup: up after down failed"; cat "$B/log"; return 1; }
+	[ "$(at 'ssd start rmtfs')" != 0 ] && [ "$(at 'kernel bind 18800000.wifi (modem running)')" -gt "$(at 'ssd start rmtfs')" ] \
+		&& [ "$(grep -c '^kernel' "$B/calls")" = 1 ] && [ "$(at 'modprobe ath10k_snoc')" = 0 ] \
+		&& [ "$(at 'modprobe hci_uart')" -gt "$(at 'kernel bind')" ] && grep -q "wlan0 up" "$B/log" && grep -q "up: done$" "$B/log" \
+		|| { echo "bringup: up after down: WiFi not attached again after the modem"; cat "$B/calls" "$B/log"; return 1; }
+	# up again while attached: no second bind
+	: > "$B/calls"; bu up
+	! grep -q '^kernel' "$B/calls" || { echo "bringup: WiFi bound twice"; cat "$B/calls"; return 1; }
+	# down, then the modem doesn't come up: WiFi is not attached half way
+	bu down; : > "$B/modem_stays_offline"; : > "$B/calls"; : > "$B/log"
+	rc=0; bu up || rc=$?
+	[ $rc = 1 ] && ! grep -q '^kernel bind' "$B/calls" && grep -q "failed: modem wifi$" "$B/log" \
+		|| { echo "bringup: WiFi attached without a running modem (rc $rc)"; cat "$B/calls" "$B/log"; return 1; }
+	rm -f "$B/modem_stays_offline"; bu down
 
 	# the address is kept; bluetoothd powered the controller on first: set while off
 	a="c2$(printf ':%s' 11 22 33 44 55)"
@@ -524,8 +569,8 @@ b4f3600c035d0159dfbc56f076b0f8e940fe69eef7d1dae0b6e606396533fc210ac671df88af22ea
 493d2c66d4ceda682239b7396ab487a9d7f1eb4f44408659c5d3970540576644deca1ca75935121c9dd3de507e78dc5a4959db2f1aafc25c6374488d7b11d284  hwclock.confd-shutdown
 270fdb37c3d50e4dc43810d9a04281acf986af67792a65fb015094101c409da390f2eb71e882392bb377aad04106d60fecbed85bd98efa91705f3b1d52d0e9e1  migrate.list
 c3271bae55269785c03e7ed9c56359b9faf841efb75ef94bb68f3a01f083ee8bce1c3373e86a708818c5679961babb6267fa2d764a01ed300d6da03dbdd2981f  networkmanager-wlan.conf
-6e634e070e3d45664faad984dd1e650e85c3752ab59b8c7746a96a036c9a599aac983c05bb73a6cb26da5ef50b9dabe8cbf2daa0ed70d7ada2e91349267c6bf2  onyx-noteair-bringup
-298b9bbb6b54616485c96151e6aac2615b91319f77378dec85231969c1335df02e017c04acb5e7d3b58e3e3d32065919017e623f3dd90f29e74b16668c85193b  onyx-noteair-bringup.initd
+00de5d5000b57a236e532cf7a8165a40a70e0532aab5711ccfdf382bb4276b3b73e789f31ba9c25da0855132c815b4fe952c7650e983bf0e88e0bca9f2f67ca2  onyx-noteair-bringup
+4f1c77e26f7de40cf0fc665610ad8c70f042ff2930fec2ed80edd477757e6734f768816c53d8eebf2c909aa38308f06f795171765fe03dbcade074fa8d3572b1  onyx-noteair-bringup.initd
 03b41e8e1e1094c8e65fa797893ba840cd51e879833781e55cb405a2c7c90e7a97e74955ae547695e13a10ea03543abc222f0bac16e8025c8f9bac4287e96d9f  onyx-noteair-bringup.modprobe
 c82a04ed6cf8391dbbdd81c0fc5c1b3a3aec1cb87f68d4afbcf70c03f1098d29115273e3f2f409be0d3282fb6ddaeedc0918859e0fa1a20bce88e721af8daca2  onyx-noteair-tune.initd
 46dade4c54d7a4d91c26a658d0546a4a32583fa1e8cab12eab60b5bf6f710f6d6a2ef634c0b9dd95a087b1e86032bf7f4a56fcfd2a53a3f1759497ad63e6ba55  waveform.health

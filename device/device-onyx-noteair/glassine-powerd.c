@@ -23,6 +23,11 @@
  * sleep then. No idle sleep either while an ALSA playback stream runs (music;
  * PipeWire closes the device ~5 s after the last sound) or while
  * /run/glassine-no-sleep exists (a root job that must finish).
+ * Once a shutdown has started, no suspend at all, whatever asks (power key, cover,
+ * idle, the Power popup): GlassineOS/shell's shutdown screen made
+ * /run/glassine-shutdown-screen.lock, or GlassineOS/boot's shutdown record
+ * /run/glassine/shutdown exists (shell spec 009 FR-013). $GLASSINE_RUN replaces /run
+ * there (tests).
  *
  * Config /etc/glassine/power.conf (key=value, re-read when it changes; written by
  * glassine-settings and glassine-shell as the desktop user, group video):
@@ -48,6 +53,8 @@
  *
  * usage: glassine-powerd [-n]   (-n: log, do not suspend or switch radios)
  *        glassine-powerd -p     (print the configuration and the light it sets, then exit)
+ *        glassine-powerd -s     (may it suspend now as far as a shutdown goes: exit 0, else
+ *                                the reason and exit 1)
  */
 #include <dirent.h>
 #include <errno.h>
@@ -793,6 +800,18 @@ static void managed_tick(void)
     if (br != lm.br || ct != lm.ct) light(1);
 }
 
+/* a shutdown has started: the mark that says so, NULL: none (FR-013 of the shell's spec 009) */
+static const char *shutting_down(void)
+{
+    static char p[2][256];
+    const char *r = getenv("GLASSINE_RUN");
+    if (!r || !*r) r = "/run";
+    snprintf(p[0], sizeof p[0], "%s/glassine-shutdown-screen.lock", r);
+    snprintf(p[1], sizeof p[1], "%s/glassine/shutdown", r);
+    for (int i = 0; i < 2; i++) if (access(p[i], F_OK) == 0) return p[i];
+    return NULL;
+}
+
 struct dev { int fd, kind; };           /* kind: 0 other input, 1 power key, 2 hall */
 
 static int scan_inputs(struct dev *d)
@@ -828,6 +847,11 @@ int main(int argc, char **argv)
     dry = argc > 1 && !strcmp(argv[1], "-n");
     print_only = argc > 1 && !strcmp(argv[1], "-p");
     if (getenv("GLASSINE_POWER_CONF")) CONF = getenv("GLASSINE_POWER_CONF");
+    if (argc > 1 && !strcmp(argv[1], "-s")) {
+        const char *sd = shutting_down();
+        if (sd) printf("a shutdown has started (%s)\n", sd);
+        return sd != NULL;
+    }
     if (print_only) {                   /* the test's view: no files written, nothing switched */
         load_conf(1);
         managed_tick();
@@ -889,6 +913,8 @@ int main(int argc, char **argv)
         if (!go && hib_req) { go = "menu"; hib = 1; }
         if (!go && sleep_req) go = "menu";
         sleep_req = hib_req = 0;
+        const char *sd = go ? shutting_down() : NULL;
+        if (sd) { stamp(); fprintf(stderr, "no %s (%s): a shutdown has started (%s)\n", hib ? "hibernate" : "sleep", go, sd); go = NULL; }
         if (go) {
             do_sleep(go, hib);
             sleep_req = hib_req = 0;

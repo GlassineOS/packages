@@ -11,10 +11,14 @@
 # (`reboot bootloader`) to glassine-reboot-clean; without one it is busybox reboot.
 # glassine-reboot-reason (0.4.1) leaves a reason for a cold reboot while a soft restart
 # (glassine-deploy restart) runs.
+# 0.5.0 (boot#98): the shutdown record /run/glassine/shutdown (next=TARGET), written by
+# reboot, poweroff, halt and glassine-reboot-clean before they start a shutdown (the
+# shell's shutdown screen words itself by it); poweroff and halt, as /usr/sbin/poweroff
+# and /usr/sbin/halt ahead of busybox's on PATH, write it and hand on to busybox.
 pkgname=glassine-reboot
-pkgver=0.4.1
+pkgver=0.5.0
 # GlassineOS/boot main
-_commit=b5100d3c860b3f14abf284f31e382b7aea37aab0
+_commit=90e24cf65905cba290807aa5c06aa19f53c289ad
 pkgrel=0
 pkgdesc="GlassineOS reboot with a reason (recovery, bootloader) or a loader request (menu)"
 url="https://github.com/GlassineOS/boot"
@@ -34,8 +38,10 @@ package() {
 	install -Dm755 glassine-reboot "$pkgdir"/usr/sbin/glassine-reboot
 	install -Dm755 sbin/glassine-reboot-clean "$pkgdir"/usr/sbin/glassine-reboot-clean
 	install -Dm755 sbin/reboot "$pkgdir"/usr/sbin/reboot
+	install -Dm755 sbin/poweroff "$pkgdir"/usr/sbin/poweroff
+	install -Dm755 sbin/halt "$pkgdir"/usr/sbin/halt
 	install -Dm755 openrc/glassine-reboot-reason "$pkgdir"/etc/init.d/glassine-reboot-reason
 }
 sha512sums="
-965c4cddf5d178a683edc69b01385ab948a565704a2e31b231ef285469f754e932b97eb62aaa2d083946cd12648b98d5d3e70e766b6fefe715a5e99efac06f59  boot-b5100d3c860b3f14abf284f31e382b7aea37aab0.tar.gz
+e2f021fda2b0af8cf671db60f7a44b7a3c95483dd87650e147d2c99b3bfe53a8cbf9a6f49a8e3ec82748c5e6b14845bcee2b21a6f132766368a7598a4c14a2db  boot-90e24cf65905cba290807aa5c06aa19f53c289ad.tar.gz
 "

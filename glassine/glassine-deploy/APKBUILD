@@ -41,6 +41,9 @@
 # watchdog fed through a soft restart's stop.
 # 0.9.1: the start menu's deployment labels are the base's version (its os-release
 # VERSION_ID) and the date, no base id; list --porcelain reports version=.
+# 0.9.2 (boot#93): the board's WATCHDOGS key; glassine-restart feeds every watchdog a
+# daemon petted through a soft restart's stop, glassine-hibernate restarts every daemon
+# it stopped.
 # glassine-bootimg (a subpackage, same source): kernel updates in the deployments
 # layout (install, reboot-test, accept, rollback, the verdict at boot by the
 # glassine-bootimg-promote service), with the board's hand-off from
@@ -51,9 +54,9 @@
 # (bootpart-test) and the block-list tool need python3, which this package doesn't pull
 # in: the uefi hand-off is shell only.
 pkgname=glassine-deploy
-pkgver=0.9.1
+pkgver=0.9.2
 # GlassineOS/boot main
-_commit=9a97fac556944c038f3caa3232194c1a0087f286
+_commit=eb4b269d4d5e77b54e2e16949947370e5a5eaa49
 pkgrel=0
 pkgdesc="GlassineOS deployments: read-only bases, tried updates, reset, hibernation"
 url="https://github.com/GlassineOS/boot"
@@ -115,5 +118,5 @@ _bootimg() {
 }
 
 sha512sums="
-eba75884e7699a2c62938d8bf88d8b2a539b8c000e4fc633162bb97af503baf284b2a7e74a5de39d6b6277c6d4ac2b41c2817ce11658bd7e9844bd424d79a70e  boot-9a97fac556944c038f3caa3232194c1a0087f286.tar.gz
+6fdd8580871a98a7dff07c002d6509d3c84c49ad8898ec52ebd83f92e679820fb744e97f2a2831cf594b2791545d97d63ffe28fd866a5f39b32e741c8c4cce27  boot-eb4b269d4d5e77b54e2e16949947370e5a5eaa49.tar.gz
 "

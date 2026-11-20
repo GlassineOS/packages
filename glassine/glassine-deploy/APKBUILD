@@ -39,6 +39,8 @@
 # where /etc/inittab exists) and an initramfs from boot at the same or a later commit
 # (older ones keep no assembly: every restart is cold). glassine-restart (shutdown): the
 # watchdog fed through a soft restart's stop.
+# 0.9.1: the start menu's deployment labels are the base's version (its os-release
+# VERSION_ID) and the date, no base id; list --porcelain reports version=.
 # glassine-bootimg (a subpackage, same source): kernel updates in the deployments
 # layout (install, reboot-test, accept, rollback, the verdict at boot by the
 # glassine-bootimg-promote service), with the board's hand-off from
@@ -49,9 +51,9 @@
 # (bootpart-test) and the block-list tool need python3, which this package doesn't pull
 # in: the uefi hand-off is shell only.
 pkgname=glassine-deploy
-pkgver=0.9.0
+pkgver=0.9.1
 # GlassineOS/boot main
-_commit=b5100d3c860b3f14abf284f31e382b7aea37aab0
+_commit=9a97fac556944c038f3caa3232194c1a0087f286
 pkgrel=0
 pkgdesc="GlassineOS deployments: read-only bases, tried updates, reset, hibernation"
 url="https://github.com/GlassineOS/boot"
@@ -113,5 +115,5 @@ _bootimg() {
 }
 
 sha512sums="
-965c4cddf5d178a683edc69b01385ab948a565704a2e31b231ef285469f754e932b97eb62aaa2d083946cd12648b98d5d3e70e766b6fefe715a5e99efac06f59  boot-b5100d3c860b3f14abf284f31e382b7aea37aab0.tar.gz
+eba75884e7699a2c62938d8bf88d8b2a539b8c000e4fc633162bb97af503baf284b2a7e74a5de39d6b6277c6d4ac2b41c2817ce11658bd7e9844bd424d79a70e  boot-9a97fac556944c038f3caa3232194c1a0087f286.tar.gz
 "

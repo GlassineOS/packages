@@ -9,10 +9,10 @@
 # binary the GlassineOS session starts. swaymsg and the rest come from Alpine's sway.
 pkgname=sway-glassine
 pkgver=1.10.1_git20261119
-# GlassineOS/sway glassine/1.10.1 (sway#20: content hints, the ink protocol's version 4)
-_commit=d55e71fb40d2cd4e6603b0feaa216c33db431c2d
+# GlassineOS/sway glassine/1.10.1 (sway#21: fractional output scales without resampling)
+_commit=147a7d46bbc05f1f7008f99401951fb76e84abab
 _wlrver=0.18.2
-pkgrel=6
+pkgrel=7
 pkgdesc="sway with the GlassineOS e-ink output backend, gestures, ink areas and the pen interface"
 url="https://github.com/GlassineOS/sway"
 arch="all"
@@ -98,6 +98,6 @@ package() {
 }
 
 sha512sums="
-ae4d7372df4a5d7adfe88f21fa585644bd6b1554a82aa79a994f75786a1894f20ceea29ee061c922d0b86150a84faac73c728ef61799e9c2d70b062ae2e069f9  sway-d55e71fb40d2cd4e6603b0feaa216c33db431c2d.tar.gz
+722dde717bd03cfd7027bb96b91a8621208100b9d9fc1f0489221be032d19377b5d06a340f0de8272c2f9f79921b5abc5136e19ceac68e5c37fb579a6c2128e0  sway-147a7d46bbc05f1f7008f99401951fb76e84abab.tar.gz
 59b0889f65e9cd914273c87a6547fa865577c34e26ddb178974be665721ac77d7146b0f45f341b64a44eb4b0bd689fab16d7972130eac443260181ff2b5a9ef7  wlroots-0.18.2.tar.gz
 "

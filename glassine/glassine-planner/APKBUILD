@@ -6,8 +6,8 @@
 pkgname=glassine-planner
 pkgver=0_git20261121
 # GlassineOS/planner main
-_commit=6c18b1697d7058f264782ba2e2ea106d77394bf8
-pkgrel=5
+_commit=7f3e608be9d6493a74f7885ae25e6c8be6dc19b8
+pkgrel=6
 pkgdesc="GlassineOS planner: days, weeks and months written with the pen"
 url="https://github.com/GlassineOS/planner"
 arch="all"
@@ -46,5 +46,5 @@ package() {
 	make UI_SYSTEM=1 DESTDIR="$pkgdir" PREFIX=/usr install
 }
 sha512sums="
-68653c4662664c8576e6bdd4f55cc738c60c4882ff95b4c04f596c6e8066af633d4e48045c3fbceb56535ae0387eb7a8b7e5923728e8d761541787b5c682464f  planner-6c18b1697d7058f264782ba2e2ea106d77394bf8.tar.gz
+1f0c97e79d63596260c3eb25119c837920e0e7621a049bf8a04751516d23fd14f2ce11c8cec36efdc9fca7fdfbbb6d427e765d85cc2ee2f36f5c6e3ffed9bf1a  planner-7f3e608be9d6493a74f7885ae25e6c8be6dc19b8.tar.gz
 "

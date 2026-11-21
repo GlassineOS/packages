@@ -1,8 +1,8 @@
 # Maintainer: Moritz Meißelbach <moritz@glassine.org>
 # The Home screen, from GlassineOS/home: pages of widgets on a grid that fills the window,
 # drawn with GlassineOS/ui at the size of the interface (its size API; its content rule
-# says a tap's answer is a page: glassine-ui 1.5.0), and the sandboxed Lua widget runtime (glassine-home-run). The session
-# (glassine-shell) starts it as the home app (app_id glassine-home) and keeps it in
+# says a tap's answer is a page: glassine-ui 1.5.0), and the sandboxed Lua widget runtime
+# (glassine-home-run). The session (glassine-shell) starts it as the home app (app_id glassine-home) and keeps it in
 # sway's scratchpad.
 pkgname=glassine-home
 pkgver=0_git20261114

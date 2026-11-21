@@ -9,19 +9,36 @@ name: publish
 on:
   push:
     branches: [main]
-    # only recipe changes publish (each run waits for an approval)
-    paths: ['keys/**', 'device/**', 'glassine/**', 'forks/**', 'arches/**']
+    # recipe changes publish (each run that builds waits for an approval); a change to
+    # the selection publishes too, so it runs once on main (it usually selects nothing)
+    paths:
+      - 'keys/**'
+      - 'device/**'
+      - 'glassine/**'
+      - 'forks/**'
+      - 'arches/**'
+      - '.github/workflows/publish.yml'
+      - 'scripts/changed.sh'
+      - 'scripts/unpublished.sh'
   workflow_dispatch:
     inputs:
       packages:
-        description: 'package directories to rebuild, or "all" (each architecture builds those published for it)'
+        description: 'package directories to rebuild, "all", or "missing" (only the recipes whose version is not published; each architecture builds those published for it)'
         default: all
+      select_only:
+        description: 'only print the selection: build and publish nothing (runs beside a publish, never waits for one)'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
+# one publish at a time. GitHub keeps one pending run per group: a newer run replaces
+# a pending one, so a push's own changes may never get a run of their own; the select
+# job therefore also builds every recipe whose version the published index lacks
+# (scripts/unpublished.sh). A select-only run has a group of its own.
 concurrency:
-  group: publish
+  group: ${{ inputs.select_only && format('publish-select-{0}', github.run_id) || 'publish' }}
   cancel-in-progress: false
 
 env:
@@ -29,8 +46,11 @@ env:
   REPO_URL: https://pkgs.glassine.org/alpine/v3.24/glassine
 
 jobs:
-  # what each architecture builds: its changed recipes (scripts/changed.sh --arch), or
-  # all of them while nothing is published for it yet (a new architecture)
+  # what each architecture builds: the recipes its push changed (scripts/changed.sh
+  # --arch, against the push's previous commit) and every recipe whose current version
+  # its published index lacks (scripts/unpublished.sh: the changes of pushes whose runs
+  # were replaced, failed or cancelled); all of them while nothing is published for it
+  # yet (a new architecture). A dispatch builds the listed ones, all, or the missing.
   select:
     if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-24.04
@@ -52,11 +72,23 @@ jobs:
         run: |
           any=
           for a in aarch64 x86_64; do
-            code=$(curl -s -o /dev/null -w '%{http_code}' "$REPO_URL/$a/APKINDEX.tar.gz")
+            # GitHub Pages may serve an index up to 10 minutes old: that only selects more
+            rm -f index.tar.gz
+            code=$(curl -s -o index.tar.gz -w '%{http_code}' "$REPO_URL/$a/APKINDEX.tar.gz")
             case "$code" in
             200)
-              if [ "$EVENT" != workflow_dispatch ]; then p=$(scripts/changed.sh --arch "$a" "$BEFORE")
+              rm -rf index && mkdir index
+              tar -xzf index.tar.gz -C index APKINDEX
+              grep -q '^P:' index/APKINDEX || { echo "::error::$REPO_URL/$a/APKINDEX.tar.gz: no packages in it"; exit 1; }
+              missing=$(scripts/unpublished.sh --arch "$a" index/APKINDEX)
+              if [ "$EVENT" != workflow_dispatch ]; then
+                changed=$(scripts/changed.sh --arch "$a" "$BEFORE")
+                if [ -n "$missing" ]; then echo "$a: not published at their version: $(printf '%s' "$missing" | tr '\n' ' ')"; fi
+                # both, in build order
+                want=$(printf '%s\n%s\n' "$changed" "$missing" | sed '/^$/d')
+                p=$(scripts/changed.sh --arch "$a" all | grep -xF "$want" || :)
               elif [ "$INPUT" = all ]; then p=$(scripts/changed.sh --arch "$a" all)
+              elif [ "$INPUT" = missing ]; then p=$missing
               else p=$(scripts/changed.sh --arch "$a" all | grep -xF "$(printf '%s\n' $INPUT)" || :)
               fi ;;
             404)
@@ -73,7 +105,7 @@ jobs:
 
   build:
     needs: select
-    if: needs.select.outputs.any != ''
+    if: needs.select.outputs.any != '' && !inputs.select_only
     strategy:
       matrix:
         include:

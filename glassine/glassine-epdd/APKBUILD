@@ -7,8 +7,8 @@
 pkgname=glassine-epdd
 pkgver=0_git20261121
 # GlassineOS/epd main
-_commit=3b9be6ce6893b29ae5326a9026f9d42cdd6571c8
-pkgrel=0
+_commit=d193b3f6b32213e0bfc5efe4c58fa8501dadd602
+pkgrel=1
 pkgdesc="GlassineOS e-ink panel daemon (recovery, static) and boot splash"
 url="https://github.com/GlassineOS/epd"
 arch="aarch64"
@@ -50,5 +50,5 @@ desktop() {
 }
 
 sha512sums="
-20f06b2cc0ed0bbdfc8f1201dc1832a7058888a91c63e37c390ce40cfcfd8014861937ee29acebd06683f7e12af84553008aac1e68a959782db7436203071b51  epd-3b9be6ce6893b29ae5326a9026f9d42cdd6571c8.tar.gz
+dd07575ea5eacce6bcefe214ed8a6452d69d675e30b89b796e348c93bc546c1e2e9872d9d8a4a103cacaf6316f9b321fa74becb930a9a814209fae28159b3f83  epd-d193b3f6b32213e0bfc5efe4c58fa8501dadd602.tar.gz
 "

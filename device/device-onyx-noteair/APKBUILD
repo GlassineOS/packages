@@ -26,7 +26,7 @@
 # (with its modprobe.d file and the speaker and microphone routing).
 pkgname=device-onyx-noteair
 pkgver=4
-pkgrel=9
+pkgrel=10
 builddir="$srcdir"
 pkgdesc="Onyx Boox Note Air: system services, device data list, modem, radios and sound"
 url="https://github.com/GlassineOS/packages"
@@ -574,7 +574,7 @@ package() {
 sha512sums="
 71ecb2850e717a48a775ee13cf8d0e70d142e2a7d1efae5ef8d877904533cfca7fa91e36ff650029bf18dd358cbe7ad9843a2320b2f1876b93659f12a727a54c  installer-3d8a5949472a9ee9060681b2fc78741166649347.tar.gz
 a7f981b0c35bacfd4a06c67b272c5d75dcc6efb9ff9eabcd344f39bd3e39e82ff5ae9c1dd716f3b5520b3cf62efaa851e3666e97d264777fb10dbe44cf74a741  deploy.conf.policy
-ce8889318d8f4d60eb097ae77eaf68f3e1b49a2eb6abad264567b2672761f4b0d1a0202dd81df56891fba3084883cada6980d5594ea0a332622cb5d445a34cb0  epd.conf
+45d13ed941b92d3e7e7c44279e88fd364fcde1d630adad7ccb9b07bc6e273f7e4f587ed3513280f9c7dcd0536af0a84083e88e3d137d78586913a5c945b516d0  epd.conf
 9706b48fca84aa8f0714f30994c648264612bdd078a21a51c9dbd5195445e2f3654068532c07818e9606e881c31a9820000a8dce7085dc00e9e69af1ef85abc1  glassine-clock
 0ced78962b82861f687eca9f68411b79e7c9994579a669c11ca4814b109c0243d805a0510a5402efee82beda5556dca8a53bff7f9fcf2e7eb16c1f2619c2eaf2  glassine-clock.initd
 35fabd4c4f1f6d5bd28fd1a0b0502e8dc969502ecddfdbd792338ed812ef867f5b893ab7c3bc5d3d63bbffcc0d1b570f8f2b19ff3c9142fe12e2f244b649ab34  glassine-clock.nm-dispatcher

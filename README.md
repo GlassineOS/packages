@@ -81,6 +81,10 @@ order (keys, glassine, forks, device); with `--arch`, only the recipes published
 `ARCH`, and a change to a recipe's `arch=` line alone builds nothing for an
 architecture it already built for (so limiting a recipe to aarch64 doesn't rebuild
 the published aarch64 packages). `scripts/test-changed.sh` checks it.
+`scripts/unpublished.sh --arch ARCH INDEX` lists the recipes published for `ARCH` whose
+current version (`pkgname` at `pkgver-rpkgrel`) the published `APKINDEX` lacks;
+`scripts/test-unpublished.sh` checks it, and that every recipe's `pkgname`, `pkgver`
+and `pkgrel` are plain values.
 
 A recipe may depend on packages of other recipes here: the build resolves those from
 the published repository when they aren't rebuilt in the same run (so on an
@@ -93,7 +97,10 @@ architecture without a published repository, build them together).
   as an artifact for 14 days. An architecture with nothing published yet builds all
   its recipes.
 - `publish`: `main`. Per architecture, on a native runner: builds the changed
-  packages signed with the repository key (a secret of the `release` environment, one
+  packages (those the push changed, and every recipe whose version the live index
+  lacks, so a push whose own run was replaced in the queue, failed or was cancelled is
+  built by the next run; a version bump is what gets a change published for sure)
+  signed with the repository key (a secret of the `release` environment, one
   approval per architecture job; both jobs wait at the same time), takes every other
   package from that architecture's live repository (its recipe must still be published
   for it), indexes and signs. An architecture with nothing to build carries its live
@@ -102,6 +109,9 @@ architecture without a published repository, build them together).
   repository line, see Using the repository) into one site and deploys it to GitHub
   Pages, which replaces the whole site each time. Earlier versions stay for a while,
   see Earlier versions.
+  By hand (`workflow_dispatch`): a list of package directories, `all`, or `missing`
+  (only the recipes whose version is not published); `select_only` prints the
+  selection and builds nothing, beside a running publish.
   Needs the repository to be public (environments and Pages on private repositories
   need a paid plan).
 

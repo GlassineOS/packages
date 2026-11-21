@@ -7,8 +7,10 @@
 # From the person's samples it makes a letter model and their handwriting font, Autograph
 # (spec 003), installed into the user's font directory from the start; fontconfig's fc-cache
 # makes apps see it at once. Every character the person hasn't written comes from the base:
-# the centre lines of Edu SA Beginner (an Edu Beginner school print model, OFL; a pinned
-# google/fonts file), made at build time by tools/base-font.py and checked glyph by glyph.
+# the centre lines of Edu SA Beginner (an Edu Beginner school print model, OFL) by default
+# and of Playwrite DE Grund (the German Grundschrift, OFL, at weight 320) for German, used
+# once a German model is installed; pinned google/fonts files, made at build time by
+# tools/base-font.py and checked glyph by glyph.
 # glassine-handwriting-samples is the handwriting samples app (spec 002): write shown
 # text so the recognizer learns the person's hand, and contribute reviewed samples. It shows
 # words without ink in Kalam (the design's hand-like face; Alpine doesn't package it), a
@@ -21,9 +23,9 @@
 pkgname=glassine-handwriting
 pkgver=0_git20261119
 # GlassineOS/handwriting main
-_commit=7fa347e2147626a6d6876a6f389647de21fb3924
+_commit=d73289eb3530942a90c40ec72de8cea87e8dcdf8
 _gf=https://raw.githubusercontent.com/google/fonts/0b58fb370093f9a9f4ff785d94405710b79de67c/ofl
-pkgrel=16
+pkgrel=17
 pkgdesc="GlassineOS handwriting recognizer"
 url="https://github.com/GlassineOS/handwriting"
 arch="all"
@@ -43,6 +45,8 @@ source="handwriting-$_commit.tar.gz::$url/archive/$_commit.tar.gz
 	Kalam-OFL.txt::$_gf/kalam/OFL.txt
 	EduSABeginner.ttf::$_gf/edusabeginner/EduSABeginner%5Bwght%5D.ttf
 	EduSABeginner-OFL.txt::$_gf/edusabeginner/OFL.txt
+	PlaywriteDEGrund.ttf::$_gf/playwritedegrund/PlaywriteDEGrund%5Bwght%5D.ttf
+	PlaywriteDEGrund-OFL.txt::$_gf/playwritedegrund/OFL.txt
 	"
 builddir="$srcdir/handwriting-$_commit/recognizer"
 
@@ -50,12 +54,14 @@ build() {
 	make
 	make -C ../client O=out
 	make base BASE_TTF="$srcdir"/EduSABeginner.ttf
+	make base-de BASE_DE_TTF="$srcdir"/PlaywriteDEGrund.ttf
 }
 
 check() {
 	make check
-	# Autograph over the base as packaged: valid in all three styles, every base character
-	HW_BIN="$builddir"/glassine-handwriting HW_BASE="$builddir"/base.jsonl python3 tests/test_letters.py AutographBase
+	# Autograph over the bases as packaged: valid in all three styles, every base character
+	HW_BIN="$builddir"/glassine-handwriting HW_BASE="$builddir"/base.jsonl \
+		HW_BASE_DE="$builddir"/base-de.jsonl python3 tests/test_letters.py AutographBase
 	# the samples app's flows against the recognizer just built (no toolkit needed)
 	make -C ../samples check HW_BIN="$builddir"/glassine-handwriting
 	# the service and its interface (the pen interface end to end runs in the
@@ -66,6 +72,7 @@ check() {
 package() {
 	make DESTDIR="$pkgdir" PREFIX=/usr install
 	make DESTDIR="$pkgdir" PREFIX=/usr install-base BASE_OFL="$srcdir"/EduSABeginner-OFL.txt
+	make DESTDIR="$pkgdir" PREFIX=/usr install-base-de BASE_DE_OFL="$srcdir"/PlaywriteDEGrund-OFL.txt
 	make -C ../client O=out DESTDIR="$pkgdir" PREFIX=/usr install
 	install -Dm644 ../docs/recognizer.md ../docs/samples.md ../docs/service.md ../docs/pen-interface.md \
 		../docs/service.schema.json -t "$pkgdir"/usr/share/doc/$pkgname/
@@ -99,9 +106,11 @@ samples() {
 }
 
 sha512sums="
-9cf839e9fe264a2ac486313fea8e7dde14b492f2c0fbd521a3a65f601567410c8c20e2fe47fcca70b5f79faa4f94906832379b04134b8451539ecbb2a1206897  handwriting-7fa347e2147626a6d6876a6f389647de21fb3924.tar.gz
+c7b6a9eca19f1fccf464a219bcee78819f858b5aabe1cc3f392d9b490eb8cbb9f5eb0adc299bf7bd5e87b0a02c93ae930bf699d779fd2d9a7cea97ec81f8725e  handwriting-d73289eb3530942a90c40ec72de8cea87e8dcdf8.tar.gz
 9c48be00cf86765639724b93e4f3525330c93cea4825d0cff19cd43d52b0317db764b5173055210cdb303c2857bf426dd3c86f113fc45fbe0ab75888a79334db  Kalam-Regular.ttf
 eae53aa2ac365f68cf77751d2ceca71b7ac78d48bd606a987754742926caeafb811e9bc1b9c69183a83f971a7c9cc388c56195392a87486aa167186e691f1eab  Kalam-OFL.txt
 aa39eadaddd5bca62854b13600167be9f3c8ee1a1f8e24c7058735c11d7411b22a7765bab261e8d3a5b5cfa42b83d915f2fa211e05e54956a5b28271c9555b14  EduSABeginner.ttf
 b55d4a03d02414e8c509b8a22ca6f53d83d7f1b4b2e1972944b92c393ea14311bdad04ab424e692ea178043a158ce70591cc97c0ff74df09a8fd13ae18538b92  EduSABeginner-OFL.txt
+33fdedd38764d67a210fb8423c2186d2605d294d676d707457f5e31f9630cf3b555bd8159ea445dead6d51886d6e0ff85b6273d10de9a6c76045e3ab4436abe8  PlaywriteDEGrund.ttf
+51360a8d269325ad4cd84fc598cfce90507a8eca5e2dd60f3f12ab5847a648f29eaa3c14afcd9e1ab98be7cfc64bdd61afaefff21cfa6876faa7c03da2225042  PlaywriteDEGrund-OFL.txt
 "

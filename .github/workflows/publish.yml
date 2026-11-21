@@ -54,7 +54,11 @@ jobs:
   select:
     if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    # up to 15 minutes waiting for the CDN to serve the last deploy's indexes
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      deployments: read
     outputs:
       aarch64: ${{ steps.select.outputs.aarch64 }}
       x86_64: ${{ steps.select.outputs.x86_64 }}
@@ -69,12 +73,36 @@ jobs:
           EVENT: ${{ github.event_name }}
           INPUT: ${{ inputs.packages }}
           BEFORE: ${{ github.event.before }}
+          GH_TOKEN: ${{ github.token }}
         run: |
+          # GitHub Pages' CDN serves a file for up to 10 minutes after a deploy replaced
+          # it, and a queued publish starts right after the previous one deployed: an
+          # index older than the last successful Pages deployment would select that
+          # deployment's packages again. So wait until the index is at least as new
+          # (Last-Modified is set when Pages takes the deployment in, a few seconds
+          # after it is created); after 15 minutes go on with what is served (it can
+          # only select more).
+          deployed=
+          for id in $(gh api "repos/$GITHUB_REPOSITORY/deployments?environment=github-pages&per_page=10" --jq '.[].id' || :); do
+            if gh api "repos/$GITHUB_REPOSITORY/deployments/$id/statuses" --jq '.[].state' | grep -qx success; then
+              deployed=$(gh api "repos/$GITHUB_REPOSITORY/deployments/$id" --jq .created_at)
+              break
+            fi
+          done
+          if [ -n "$deployed" ]; then echo "last Pages deployment: $deployed"
+          else echo "::warning::no successful Pages deployment found: the indexes may be CDN copies"; fi
           any=
           for a in aarch64 x86_64; do
-            # GitHub Pages may serve an index up to 10 minutes old: that only selects more
-            rm -f index.tar.gz
-            code=$(curl -s -o index.tar.gz -w '%{http_code}' "$REPO_URL/$a/APKINDEX.tar.gz")
+            for try in $(seq 45); do
+              rm -f index.tar.gz headers
+              code=$(curl -s -D headers -o index.tar.gz -w '%{http_code}' "$REPO_URL/$a/APKINDEX.tar.gz")
+              if [ "$code" != 200 ] || [ -z "$deployed" ]; then break; fi
+              lm=$(sed -n 's/^last-modified: *//Ip' headers | tr -d '\r')
+              if [ -n "$lm" ] && [ "$(date -d "$lm" +%s)" -ge "$(date -d "$deployed" +%s)" ]; then break; fi
+              if [ "$try" = 45 ]; then echo "::warning::$a: the index is still older than the last deployment ($lm): it may select more"; break; fi
+              echo "$a: the index is a CDN copy from before the last deployment ($lm), waiting"
+              sleep 20
+            done
             case "$code" in
             200)
               rm -rf index && mkdir index

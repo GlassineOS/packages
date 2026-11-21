@@ -54,6 +54,12 @@
 # shutdown record /run/glassine/shutdown (next=restart from glassine-deploy restart);
 # glassine-mount-ro turns the shell's /run/glassine/screen-keep into the override
 # "leave the screen" at a cold shutdown (boot's specs/011 FR-014, 013 FR-032).
+# 0.11.0 (boot#99): the hibernate picture (boot's specs/011 FR-024 to FR-028):
+# glassine-hibernate takes the picture of the screen (GlassineOS/shell's
+# glassine-screen-picture, in glassine-shell; without it no picture) before the device
+# steps and writes it as the one-time override (glassine-splash-store override
+# --picture, through gspl-encode), removed again once the kernel returns or the
+# hibernate is cancelled; HIBERNATE_PICTURE=no in deploy.conf turns it off.
 # glassine-bootimg (a subpackage, same source): kernel updates in the deployments
 # layout (install, reboot-test, accept, rollback, the verdict at boot by the
 # glassine-bootimg-promote service), with the board's hand-off from
@@ -64,9 +70,9 @@
 # (bootpart-test) and the block-list tool need python3, which this package doesn't pull
 # in: the uefi hand-off is shell only.
 pkgname=glassine-deploy
-pkgver=0.10.0
+pkgver=0.11.0
 # GlassineOS/boot main
-_commit=90e24cf65905cba290807aa5c06aa19f53c289ad
+_commit=d62bada45dba1fd9e1e3c88bb5af6c39c2825106
 pkgrel=0
 pkgdesc="GlassineOS deployments: read-only bases, tried updates, reset, hibernation"
 url="https://github.com/GlassineOS/boot"
@@ -75,9 +81,9 @@ license="GPL-2.0-or-later"
 # debugfs and filefrag are in e2fsprogs-extra; ash, flock, awk and blkid in busybox;
 # developer mode: udhcpd (busybox-extras), sshd and ssh-keygen (openssh-server, whose
 # own sshd service stays off); the first start: btrfs-progs (resize) and e2fsprogs (mke2fs,
-# dumpe2fs). device-onyx-noteair before 4 shipped its own
+# dumpe2fs); the hibernate picture: gspl-encode. device-onyx-noteair before 4 shipped its own
 # glassine-device-seed.
-depends="apk-tools btrfs-progs busybox busybox-extras e2fsprogs e2fsprogs-extra openrc openssh-server
+depends="apk-tools btrfs-progs gspl-encode busybox busybox-extras e2fsprogs e2fsprogs-extra openrc openssh-server
 	!device-onyx-noteair<4"
 # the tests need privileged Docker (real btrfs and overlayfs); they run in boot's CI.
 # !tracedeps: no automatic provides, or /usr/sbin/apk would provide cmd:apk and
@@ -129,5 +135,5 @@ _bootimg() {
 }
 
 sha512sums="
-e2f021fda2b0af8cf671db60f7a44b7a3c95483dd87650e147d2c99b3bfe53a8cbf9a6f49a8e3ec82748c5e6b14845bcee2b21a6f132766368a7598a4c14a2db  boot-90e24cf65905cba290807aa5c06aa19f53c289ad.tar.gz
+2443f35c61ba750e2c4dceb9c7b8447b5d83b9b96622c43078237e6fe873ddc8776e0ea152ed93fea6e89f92c49eecfb01451f5c0f5ea7f3c126078e8146beae  boot-d62bada45dba1fd9e1e3c88bb5af6c39c2825106.tar.gz
 "

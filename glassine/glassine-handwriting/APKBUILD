@@ -4,8 +4,11 @@
 # as a child process. Its base models are glassine-handwriting-model-LANG; in prose fields
 # it also reads with the keyboard predictor's words (glassine-predict-model) when installed,
 # and with the language's character model (chars.gclm, in glassine-handwriting-model-LANG).
-# From the person's samples it makes a letter model and their handwriting font (spec 003),
-# installed into the user's font directory; fontconfig's fc-cache makes apps see it at once.
+# From the person's samples it makes a letter model and their handwriting font, Autograph
+# (spec 003), installed into the user's font directory from the start; fontconfig's fc-cache
+# makes apps see it at once. Every character the person hasn't written comes from the base:
+# the centre lines of Edu SA Beginner (an Edu Beginner school print model, OFL; a pinned
+# google/fonts file), made at build time by tools/base-font.py and checked glyph by glyph.
 # glassine-handwriting-samples is the handwriting samples app (spec 002): write shown
 # text so the recognizer learns the person's hand, and contribute reviewed samples. It shows
 # words without ink in Kalam (the design's hand-like face; Alpine doesn't package it), a
@@ -18,15 +21,16 @@
 pkgname=glassine-handwriting
 pkgver=0_git20261119
 # GlassineOS/handwriting main
-_commit=72e3c50e334bd8651b220fa572602824114f35ff
+_commit=d84e3d9710df88f33e5bcfbb0f7241d3f9aef8d4
 _gf=https://raw.githubusercontent.com/google/fonts/0b58fb370093f9a9f4ff785d94405710b79de67c/ofl
-pkgrel=13
+pkgrel=14
 pkgdesc="GlassineOS handwriting recognizer"
 url="https://github.com/GlassineOS/handwriting"
 arch="all"
-license="GPL-2.0-or-later"
+license="GPL-2.0-or-later AND OFL-1.1"
 depends="fontconfig"
-makedepends="json-c-dev pkgconf wayland-dev"
+# python3, numpy and fontTools: the base font's centre lines (tools/base-font.py)
+makedepends="json-c-dev pkgconf wayland-dev python3 py3-numpy py3-fonttools"
 # make check: the engine's unit tests, the features and characters against the trainer's
 # Python (numpy only), the contract against a tiny test model; no trained model needed;
 # the font against fontTools, HarfBuzz's shaper and fontconfig
@@ -37,16 +41,21 @@ subpackages="$pkgname-doc $pkgname-dev $pkgname-libs $pkgname-samples:samples:no
 source="handwriting-$_commit.tar.gz::$url/archive/$_commit.tar.gz
 	Kalam-Regular.ttf::$_gf/kalam/Kalam-Regular.ttf
 	Kalam-OFL.txt::$_gf/kalam/OFL.txt
+	EduSABeginner.ttf::$_gf/edusabeginner/EduSABeginner%5Bwght%5D.ttf
+	EduSABeginner-OFL.txt::$_gf/edusabeginner/OFL.txt
 	"
 builddir="$srcdir/handwriting-$_commit/recognizer"
 
 build() {
 	make
 	make -C ../client O=out
+	make base BASE_TTF="$srcdir"/EduSABeginner.ttf
 }
 
 check() {
 	make check
+	# Autograph over the base as packaged: valid in all three styles, every base character
+	HW_BIN="$builddir"/glassine-handwriting HW_BASE="$builddir"/base.jsonl python3 tests/test_letters.py AutographBase
 	# the samples app's flows against the recognizer just built (no toolkit needed)
 	make -C ../samples check HW_BIN="$builddir"/glassine-handwriting
 	# the service and its interface (the pen interface end to end runs in the
@@ -56,6 +65,7 @@ check() {
 
 package() {
 	make DESTDIR="$pkgdir" PREFIX=/usr install
+	make DESTDIR="$pkgdir" PREFIX=/usr install-base BASE_OFL="$srcdir"/EduSABeginner-OFL.txt
 	make -C ../client O=out DESTDIR="$pkgdir" PREFIX=/usr install
 	install -Dm644 ../docs/recognizer.md ../docs/samples.md ../docs/service.md ../docs/pen-interface.md \
 		../docs/service.schema.json -t "$pkgdir"/usr/share/doc/$pkgname/
@@ -89,7 +99,9 @@ samples() {
 }
 
 sha512sums="
-c0207fe223704e991965fb0b30b3407eeab534b1ce6cffd0c1e84841421ee29cdc25247ed5a5252c6c4b008016f1e7fcdbebe8e05c5af0059e841e883be62879  handwriting-72e3c50e334bd8651b220fa572602824114f35ff.tar.gz
+c134bc01a5543020422cfdc6fe57e88ad1ce40a87d37f316024e2b7f0957adacf6ce12b8811e03257d1fb8de13d823dbf682129a99c8c8c05906f55bc0620992  handwriting-d84e3d9710df88f33e5bcfbb0f7241d3f9aef8d4.tar.gz
 9c48be00cf86765639724b93e4f3525330c93cea4825d0cff19cd43d52b0317db764b5173055210cdb303c2857bf426dd3c86f113fc45fbe0ab75888a79334db  Kalam-Regular.ttf
 eae53aa2ac365f68cf77751d2ceca71b7ac78d48bd606a987754742926caeafb811e9bc1b9c69183a83f971a7c9cc388c56195392a87486aa167186e691f1eab  Kalam-OFL.txt
+aa39eadaddd5bca62854b13600167be9f3c8ee1a1f8e24c7058735c11d7411b22a7765bab261e8d3a5b5cfa42b83d915f2fa211e05e54956a5b28271c9555b14  EduSABeginner.ttf
+b55d4a03d02414e8c509b8a22ca6f53d83d7f1b4b2e1972944b92c393ea14311bdad04ab424e692ea178043a158ce70591cc97c0ff74df09a8fd13ae18538b92  EduSABeginner-OFL.txt
 "

@@ -1,0 +1,49 @@
+# Maintainer: Moritz Meißelbach <moritz@glassine.org>
+# The planner, from GlassineOS/planner: day, week and month pages written with the pen,
+# drawn with GlassineOS/ui. Every field is a writing region of the handwriting service,
+# which reads what is written; without it the planner says so and doesn't start.
+# Installs the program and its desktop entry (the launcher's "Planner").
+pkgname=glassine-planner
+pkgver=0_git20261121
+# GlassineOS/planner main
+_commit=9f70b360031ed54df5bb67595c0e4637224debd7
+pkgrel=0
+pkgdesc="GlassineOS planner: days, weeks and months written with the pen"
+url="https://github.com/GlassineOS/planner"
+arch="all"
+license="GPL-2.0-or-later"
+depends="glassine-handwriting-service"
+makedepends="
+	cairo-dev
+	glassine-handwriting-dev
+	glassine-ui-dev
+	glib-dev
+	librsvg-dev
+	libxkbcommon-dev
+	linux-headers
+	pango-dev
+	wayland-dev
+	wayland-protocols
+	"
+# the view tests and renders draw the boards offscreen with these fonts
+checkdepends="
+	font-dejavu
+	font-eb-garamond
+	"
+source="planner-$_commit.tar.gz::$url/archive/$_commit.tar.gz"
+builddir="$srcdir/planner-$_commit"
+
+build() {
+	make UI_SYSTEM=1 PREFIX=/usr
+}
+
+check() {
+	make UI_SYSTEM=1 PREFIX=/usr check
+}
+
+package() {
+	make UI_SYSTEM=1 DESTDIR="$pkgdir" PREFIX=/usr install
+}
+sha512sums="
+1f42afe40bf10cbf3f355a33faffebc80727afe4d87f6be23bd8657dc7745f1f45735d2ebb9ee29c06a84c7b7200033ee96197771d4673ef335f8db74ebb1104  planner-9f70b360031ed54df5bb67595c0e4637224debd7.tar.gz
+"

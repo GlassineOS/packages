@@ -99,8 +99,10 @@ architecture without a published repository, build them together).
 - `publish`: `main`. Per architecture, on a native runner: builds the changed
   packages (those the push changed, and every recipe whose version the live index
   lacks, so a push whose own run was replaced in the queue, failed or was cancelled is
-  built by the next run; a version bump is what gets a change published for sure)
-  signed with the repository key (a secret of the `release` environment, one
+  built by the next run; a version bump is what gets a change published for sure;
+  the select job waits until GitHub Pages' CDN serves indexes at least as new as the
+  last deployment, so a run queued behind another doesn't build that one's packages
+  again) signed with the repository key (a secret of the `release` environment, one
   approval per architecture job; both jobs wait at the same time), takes every other
   package from that architecture's live repository (its recipe must still be published
   for it), indexes and signs. An architecture with nothing to build carries its live

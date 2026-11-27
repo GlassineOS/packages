@@ -8,8 +8,7 @@
 # come from GlassineOS/ui (glassine-ui, and py3-glassine-ui for the Python apps). The theme
 # fonts that Alpine doesn't package are in glassine-shell-fonts (pinned google/fonts files, OFL).
 #
-# Optional, used when installed: grim (Print key), foot (terminal key),
-# alpine-appstream-downloader (app catalogue on connect), xdg-user-dirs,
+# Optional, used when installed: grim (Print key), foot (terminal key), xdg-user-dirs,
 # btrfs-progs (glassine-zram's compressed spill; a plain file without it).
 # glassine-screen-picture and glassine-start-picture (spec 010): the picture of the
 # screen with the resume notice, turned back, for the hibernate step's preview at the
@@ -18,10 +17,10 @@
 pkgname=glassine-shell
 pkgver=0_git20261121
 # GlassineOS/shell main
-_commit=b25dc619dbfbe6e7e241c82fcb3e0d635fbf07d4
+_commit=b81ad7b0589ddeca71405c5ec22384c3acca1969
 # google/fonts, as in the shell's fonts/fetch-fonts.sh
 _gf=https://raw.githubusercontent.com/google/fonts/0b58fb370093f9a9f4ff785d94405710b79de67c/ofl
-pkgrel=6
+pkgrel=7
 pkgdesc="GlassineOS e-ink desktop: shell, window model, settings, sway session"
 url="https://github.com/GlassineOS/shell"
 arch="all"
@@ -122,7 +121,7 @@ fonts() {
 }
 
 sha512sums="
-d35746c196f437367a037ff28757fb8460d9bfc7476055aa810308004067361c5de895e06230c5b2f06392ac0a4b90f43e341aac3f516f5e04e778e966a73194  shell-b25dc619dbfbe6e7e241c82fcb3e0d635fbf07d4.tar.gz
+683e34fd31372ac3015aa4186339643a8f7ca4bdce19f3e80e84e9bab0020f39fa1b931b9f817c6333c6d476d95f5c1ca1ccab7069b68c664f51045bbb7aa20d  shell-b81ad7b0589ddeca71405c5ec22384c3acca1969.tar.gz
 f6227ae0b96a951e5282babc44864893e92d12f6dcfe8c8bd7b548ca0f239bc71fc88ad17ddb5de45fc36a38896e1dbe1075a3260562a13db733a18e820f1442  IBMPlexSans-VF.ttf
 cea00ba67a618a50f318ed0baa07085e1dffe1ab90875ed7b5295d81040a62b6d71f08b1c416d78c0ebff324676c778855ac90d595082a8eb222dc7afb31d552  IBMPlexMono-Regular.ttf
 8bc228f89d2045902e2dc71387a6bef978d6b1f27467c5419f0d405803d5037f0c157ec2dd40d95bcc5b93d9f17e59c0c00701f88a1ffb18a9050d2564cf19a2  IBMPlexMono-Medium.ttf

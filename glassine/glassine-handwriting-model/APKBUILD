@@ -14,8 +14,12 @@
 # LICENSES lists all.
 pkgname=glassine-handwriting-model
 pkgver=2
-pkgrel=1
+pkgrel=2
 _chars_en=1
+# the release tags: the version, and -rN when a release was published again under a
+# new tag (GlassineOS/handwriting models/README.md); the assets keep their names
+_tag=model-en-$pkgver-r2
+_chars_tag=chars-en-$_chars_en-r2
 pkgdesc="Handwriting recognition models of GlassineOS"
 url="https://github.com/GlassineOS/handwriting"
 arch="noarch"
@@ -24,8 +28,8 @@ license="GPL-2.0-or-later AND CC0-1.0"
 depends="$pkgname-en"
 options="!check" # a release is checked against the recognizer (make check-model) before it is published
 subpackages="$pkgname-en:_en"
-source="$pkgname-en-$pkgver.tar.gz::$url/releases/download/model-en-$pkgver/$pkgname-en-$pkgver.tar.gz
-	glassine-handwriting-chars-en-$_chars_en.tar.gz::$url/releases/download/chars-en-$_chars_en/glassine-handwriting-chars-en-$_chars_en.tar.gz
+source="$pkgname-en-$pkgver.tar.gz::$url/releases/download/$_tag/$pkgname-en-$pkgver.tar.gz
+	glassine-handwriting-chars-en-$_chars_en.tar.gz::$url/releases/download/$_chars_tag/glassine-handwriting-chars-en-$_chars_en.tar.gz
 	"
 builddir="$srcdir"
 

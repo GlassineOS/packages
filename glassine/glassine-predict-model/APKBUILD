@@ -7,8 +7,8 @@
 pkgname=glassine-predict-model
 pkgver=0_git20261114
 # GlassineOS/shell main
-_commit=87929e415dbf29eaa1dc353fc0e0ff4d4c154d99
-pkgrel=0
+_commit=89a304962054411bdef334e7efe70ea06305a807
+pkgrel=1
 pkgdesc="Word prediction models of the GlassineOS on-screen keyboard"
 url="https://github.com/GlassineOS/shell"
 arch="noarch"
@@ -61,7 +61,7 @@ _en() { _model English en; }
 _de() { _model German de; }
 
 sha512sums="
-c8bec58d7467d1fc6c52c8e328ba636cb2bc666025736f15f07dc00bd3490166c792ed321fa90f8e9ca066b39ec906633184a7c60eccbab3e4d2b273ff849315  shell-87929e415dbf29eaa1dc353fc0e0ff4d4c154d99.tar.gz
+589c7ee35fc1fc63aba3b5e63a58f8cbdd24eb6df12b8877492aec2e26ff7000121221820d3f2ea3a9661e5c5a099771c362bbf865920f5019b69638bb1108ab  shell-89a304962054411bdef334e7efe70ea06305a807.tar.gz
 cc7bd8832104be5d1bcea3b33977022e6d07f9ddb997b67ae4b7fb25816c6e4f49077f440f98838c100fca131b0ea6e5132c150525fd015367c9fd7b9cb9651d  simplewiki.parquet
 72391b15ca2f93eb42a2bef658fb0f4ff98430de02bf510cddab72bddb46b6b585714ec911dfbb5ab4b60434912df40ec59586f302d50d16ab818b3be92410e5  eng_sentences.tsv.bz2
 4ab1e3bbccf506d0796486a142c662f68569db1236a337ed102dae6e4408e0587a33379a6dca53bd941dcbca4075a22c1713653cabc2f4965ea636648b607c40  dewiki-03.parquet

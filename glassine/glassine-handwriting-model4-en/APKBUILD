@@ -9,23 +9,27 @@
 # model's (docs/recognizer.md, Base models); it gets its own at the next adaptation run
 # (glassine-handwriting adapt -f to start one at once). Model 4 is ghm version 2 and needs a
 # recognizer that reads it and has the setting.
-# The model is trained by hand and published as the release asset model-en-4 of
+# The model is trained by hand and published as the release asset model-en-4-r2 of
 # GlassineOS/handwriting (models/README.md); its README has the recipe, data and results.
 # Licences: the model GPL-2.0-or-later (synthetic ink from OFL and Apache-2.0 fonts and
 # public-domain text and names; it holds none of them), the character model
 # GPL-2.0-or-later, prompts.txt CC0-1.0; LICENSES lists all.
 pkgname=glassine-handwriting-model4-en
 pkgver=4
-pkgrel=0
+pkgrel=1
 _chars_en=1
+# the release tags: the version, and -rN when a release was published again under a
+# new tag (GlassineOS/handwriting models/README.md); the assets keep their names
+_tag=model-en-$pkgver-r2
+_chars_tag=chars-en-$_chars_en-r2
 pkgdesc="Handwriting recognition model 4 of GlassineOS (English, for a trial)"
 url="https://github.com/GlassineOS/handwriting"
 arch="noarch"
 license="GPL-2.0-or-later AND CC0-1.0"
 depends="glassine-handwriting>=0_git20261117"
 options="!check" # a release is checked against the recognizer (make check-model) before it is published
-source="glassine-handwriting-model-en-$pkgver.tar.gz::$url/releases/download/model-en-$pkgver/glassine-handwriting-model-en-$pkgver.tar.gz
-	glassine-handwriting-chars-en-$_chars_en.tar.gz::$url/releases/download/chars-en-$_chars_en/glassine-handwriting-chars-en-$_chars_en.tar.gz
+source="glassine-handwriting-model-en-$pkgver.tar.gz::$url/releases/download/$_tag/glassine-handwriting-model-en-$pkgver.tar.gz
+	glassine-handwriting-chars-en-$_chars_en.tar.gz::$url/releases/download/$_chars_tag/glassine-handwriting-chars-en-$_chars_en.tar.gz
 	"
 builddir="$srcdir"
 

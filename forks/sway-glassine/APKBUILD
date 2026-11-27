@@ -10,9 +10,9 @@
 pkgname=sway-glassine
 pkgver=1.10.1_git20261119
 # GlassineOS/sway glassine/1.10.1 (sway#21: fractional output scales without resampling)
-_commit=147a7d46bbc05f1f7008f99401951fb76e84abab
+_commit=a57f7fa85dc3a5f91e1123b2d1093bf97ff6a007
 _wlrver=0.18.2
-pkgrel=7
+pkgrel=8
 pkgdesc="sway with the GlassineOS e-ink output backend, gestures, ink areas and the pen interface"
 url="https://github.com/GlassineOS/sway"
 arch="all"
@@ -98,6 +98,6 @@ package() {
 }
 
 sha512sums="
-722dde717bd03cfd7027bb96b91a8621208100b9d9fc1f0489221be032d19377b5d06a340f0de8272c2f9f79921b5abc5136e19ceac68e5c37fb579a6c2128e0  sway-147a7d46bbc05f1f7008f99401951fb76e84abab.tar.gz
+73a367eea47172a73e4c850cad53244b8f439da3e4195da68d2168f2747b6fa3315673be539464cd4c4477ecb4e5a5512f5a2d8cae73ae6c5a4dfb2078bb721f  sway-a57f7fa85dc3a5f91e1123b2d1093bf97ff6a007.tar.gz
 59b0889f65e9cd914273c87a6547fa865577c34e26ddb178974be665721ac77d7146b0f45f341b64a44eb4b0bd689fab16d7972130eac443260181ff2b5a9ef7  wlroots-0.18.2.tar.gz
 "

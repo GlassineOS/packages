@@ -6,8 +6,8 @@
 pkgname=glassine-ui
 pkgver=1.5.1
 # GlassineOS/ui main
-_commit=3aa8d79950658ac95d47e252ff77b2de384ef27b
-pkgrel=0
+_commit=0185dada55e09ea419de1f4fa6a205e05eac1d57
+pkgrel=1
 pkgdesc="GlassineOS desktop look: the voices and the drawing built on them"
 url="https://github.com/GlassineOS/ui"
 arch="all"
@@ -51,5 +51,5 @@ py3() {
 }
 
 sha512sums="
-4bc652890c0b535392cce94d4814fa6827c6f22bd2be40de25528eb9fcd091acb1cf191aaafb9962d98dc516fe67cda8d18fdbccb19d1cb1950d157eb381da0b  ui-3aa8d79950658ac95d47e252ff77b2de384ef27b.tar.gz
+9ded577b8a5615876f0b4c8907e6e79ae486b4193c7f4809e05a53b86dadd57e79a41aae5c9aa2bee92c787491249b013f94370871ffe3ecb547850e75bef9d0  ui-0185dada55e09ea419de1f4fa6a205e05eac1d57.tar.gz
 "

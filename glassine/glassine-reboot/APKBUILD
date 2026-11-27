@@ -18,8 +18,8 @@
 pkgname=glassine-reboot
 pkgver=0.5.0
 # GlassineOS/boot main
-_commit=90e24cf65905cba290807aa5c06aa19f53c289ad
-pkgrel=0
+_commit=d7a885fb8b21fa191abe559d295bf0ec33b61fed
+pkgrel=1
 pkgdesc="GlassineOS reboot with a reason (recovery, bootloader) or a loader request (menu)"
 url="https://github.com/GlassineOS/boot"
 arch="all"
@@ -43,5 +43,5 @@ package() {
 	install -Dm755 openrc/glassine-reboot-reason "$pkgdir"/etc/init.d/glassine-reboot-reason
 }
 sha512sums="
-e2f021fda2b0af8cf671db60f7a44b7a3c95483dd87650e147d2c99b3bfe53a8cbf9a6f49a8e3ec82748c5e6b14845bcee2b21a6f132766368a7598a4c14a2db  boot-90e24cf65905cba290807aa5c06aa19f53c289ad.tar.gz
+3418dfa752499f7ade1c8dbfe5d12715e4355c9b47785d7093d60e9475f5b2a5f688463d0be0623e28820de13d7cfa29a2312abbfe4913ae3a290d3e4049c7af  boot-d7a885fb8b21fa191abe559d295bf0ec33b61fed.tar.gz
 "

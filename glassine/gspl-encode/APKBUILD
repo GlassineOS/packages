@@ -7,8 +7,8 @@
 pkgname=gspl-encode
 pkgver=0.2.0
 # GlassineOS/loader main, the merge of #10 (the workspace's version 0.2.0)
-_commit=15b1ddb612f73b633ab35ab8c65a30c3d6f674fb
-pkgrel=0
+_commit=fce9cbadebe0652c397ca8dda13d4f072576d98a
+pkgrel=1
 pkgdesc="GlassineOS boot splash image writer and checker (image format 2)"
 url="https://github.com/GlassineOS/loader"
 arch="aarch64 x86_64"
@@ -36,5 +36,5 @@ package() {
 	install -Dm755 target/release/gspl-encode "$pkgdir"/usr/bin/gspl-encode
 }
 sha512sums="
-aab764da3613d1316654b8202399930795b3eff31f6848f36a58732b470e1f3ec07f22dcb86f59f066b930892cc6cb49cf6cbc8ac43ddc09c6b1c137bfb689c7  loader-15b1ddb612f73b633ab35ab8c65a30c3d6f674fb.tar.gz
+f192f668cb02f4de318de79489762a22b0640bcfbdf6717e5f5668213b42a4cec1c1b0ab9b297b2fac430c6b8d54bcb7ad3a63d1dd00001e9d18760be949ca60  loader-fce9cbadebe0652c397ca8dda13d4f072576d98a.tar.gz
 "

@@ -80,8 +80,8 @@
 pkgname=glassine-deploy
 pkgver=0.12.3
 # GlassineOS/boot main
-_commit=479d20a98041477e34c412136b62ed071e27b20f
-pkgrel=0
+_commit=d40f66ba0ceab0a83be667e2f0a3c9999a66e4db
+pkgrel=1
 pkgdesc="GlassineOS deployments: read-only bases, tried updates, reset, hibernation"
 url="https://github.com/GlassineOS/boot"
 arch="noarch"
@@ -143,5 +143,5 @@ _bootimg() {
 }
 
 sha512sums="
-cd6ba0bc2237abab8716a4cc65ac79aef0b6d7e9541cbff71b93547476058af5e7b75122343f15375d3c64ca540b82be1b95a401c778acd1088d160ece269a38  boot-479d20a98041477e34c412136b62ed071e27b20f.tar.gz
+5f403e7d9076f4615fe0b50d52bade2b4c0a8aeedcaab447f4b620b8dede5c62ba5fa70e7323ee0b52e7cd59376635ac99b2071ade9361ad19656d6873e70a7c  boot-d40f66ba0ceab0a83be667e2f0a3c9999a66e4db.tar.gz
 "

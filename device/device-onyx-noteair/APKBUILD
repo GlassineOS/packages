@@ -26,7 +26,7 @@
 # (with its modprobe.d file and the speaker and microphone routing).
 pkgname=device-onyx-noteair
 pkgver=4
-pkgrel=10
+pkgrel=11
 builddir="$srcdir"
 pkgdesc="Onyx Boox Note Air: system services, device data list, modem, radios and sound"
 url="https://github.com/GlassineOS/packages"
@@ -41,7 +41,7 @@ license="GPL-2.0-or-later"
 # bluez-btmgmt (the Bluetooth address: the chip has none)
 # GlassineOS/installer: the description (devices/onyx-noteair.toml) and
 # glassine-device-files, which checks it as the installer does and derives the files
-_installer=3d8a5949472a9ee9060681b2fc78741166649347
+_installer=9ef4bc19d5be77421bd03fd2a0d6551df27632b7
 depends="busybox glassine-deploy>=0.4.0 glassine-epdd glassine-slot
 	alsa-utils bluez-btmgmt qrtr qrtr-diag-sink rmtfs tqftpserv"
 source="installer-$_installer.tar.gz::https://github.com/GlassineOS/installer/archive/$_installer.tar.gz
@@ -572,7 +572,7 @@ package() {
 	install -Dm755 "$srcdir"/hibernate-refresh "$pkgdir"$h/90-refresh
 }
 sha512sums="
-71ecb2850e717a48a775ee13cf8d0e70d142e2a7d1efae5ef8d877904533cfca7fa91e36ff650029bf18dd358cbe7ad9843a2320b2f1876b93659f12a727a54c  installer-3d8a5949472a9ee9060681b2fc78741166649347.tar.gz
+5132ef0e541c3f9a47a10dc22defeda133925a268cb76ae68f4a4a661f5d2371ca6d227c4daa6511d7366f542551fd83b098d7b0c503c681df1dc60b98f392a7  installer-9ef4bc19d5be77421bd03fd2a0d6551df27632b7.tar.gz
 a7f981b0c35bacfd4a06c67b272c5d75dcc6efb9ff9eabcd344f39bd3e39e82ff5ae9c1dd716f3b5520b3cf62efaa851e3666e97d264777fb10dbe44cf74a741  deploy.conf.policy
 45d13ed941b92d3e7e7c44279e88fd364fcde1d630adad7ccb9b07bc6e273f7e4f587ed3513280f9c7dcd0536af0a84083e88e3d137d78586913a5c945b516d0  epd.conf
 9706b48fca84aa8f0714f30994c648264612bdd078a21a51c9dbd5195445e2f3654068532c07818e9606e881c31a9820000a8dce7085dc00e9e69af1ef85abc1  glassine-clock

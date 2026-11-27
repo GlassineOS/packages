@@ -13,8 +13,8 @@ pkgname=mesa-flatpak-glassine
 pkgver=26.1.6
 # the bundles' release: forks/mesa's pkgrel and flatpak/org.freedesktop.Platform.GL.glassine/release
 _mesarel=200
-_rel=2
-pkgrel=2
+_rel=3
+pkgrel=3
 pkgdesc="Mesa with the GlassineOS freedreno patches for Flatpak apps"
 url="https://github.com/GlassineOS/packages"
 arch="aarch64"
@@ -49,8 +49,8 @@ package() {
 sha512sums="
 cc5fe81fa17dc94d35cef4abe3a7a96113a7b4759602fe9fccf46e1fbf746fe1eb2316dc531217f4b5afe6bbe28f967c9edefd608fcd2dd787eeeb2019fe1e2f  mesa-flatpak-glassine-sync
 21f76231e4939223b336071c3b9410384d27388c9444e1a4ec634d5e832a6fbb9b7e93941437e7e7f5f2e08e459c786a5ce83537c35547370a6ff3d12ea0f8b3  mesa-flatpak-glassine.initd
-8b6e875e96fce2f872b5be67f808ccf3b5c325e1bf5906a0123d0832759d90b36ab8f4c09028150e236a94ce39826282f8584152bb49e610a626be029291177f  org.freedesktop.Platform.GL.glassine-25.08-aarch64-26.1.6-r200-2.flatpak
-c4d1498e9c5280257f10ea34967b2e812c67f39334868907527b6944ad07bae800f3ad9dbb9fe59a5e5bc8db8598806d66c7a7e0c8ad5bcedb97954b814635c8  org.freedesktop.Platform.GL.glassine-25.08-aarch64-26.1.6-r200-2.commit
-56d17f6edd886f3dc2a241f1ff65babb5d91d8bf73ae501a9aad02f177e4611f5b2dccbe4209bc207dc7359cdd12fed3575ed7760f8467422051268c376f0213  org.freedesktop.Platform.GL.glassine-26.08-aarch64-26.1.6-r200-2.flatpak
-f0292186ace5cd83a572090ed4f93776942eaa58bb1e1db5340b8d9814d5f19ae207c20810f0683e24d304358e673f9f0cb8c5398242184481e7fa3b542b3adb  org.freedesktop.Platform.GL.glassine-26.08-aarch64-26.1.6-r200-2.commit
+909ec91fa7aad1c76bce9078b2d842a7ea8aa0614509da632824cd6ea6caeb504cf3fd3dc4a08324c49a8e6852a626c92451c586e015f72106078632094f5fd4  org.freedesktop.Platform.GL.glassine-25.08-aarch64-26.1.6-r200-3.flatpak
+f090c477a305b3e11b1656a8de5e647654ad22db7eabbec23929f665a7fc845314b3050de490de09ea6dafe6f3d62f52c9fa5f624e16fab6f0116b2fab9cae09  org.freedesktop.Platform.GL.glassine-25.08-aarch64-26.1.6-r200-3.commit
+66e1b674d8b8775ee0ea552e2587ef402c2fbb463483647328334077aa490e501210b14aaf12bdcaba34557396f583e1287456b6abbe77129f58cb2b31a0366a  org.freedesktop.Platform.GL.glassine-26.08-aarch64-26.1.6-r200-3.flatpak
+4774d9a364fbfa95f091c3920d8cba9d1a1adfb71f9970eee61c7b2e19e85f7f6155c5a37c7eb77f1b3fb0aabb8d8bb0fdfaeb21ce47e7cd7a0104554f7d3fba  org.freedesktop.Platform.GL.glassine-26.08-aarch64-26.1.6-r200-3.commit
 "

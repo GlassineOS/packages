@@ -9,8 +9,9 @@
 # seed service and the initramfs read it), slots.conf names Android's slot for the
 # power menu, and deploy.conf.device holds glassine-deploy's device facts (the system
 # and data partitions, the space kept free at the data partition's end for Android's
-# encryption footer). /etc/glassine/deploy.conf is assembled at the build from those
-# facts and this package's own settings (deploy.conf.policy).
+# encryption footer, how many earlier deployments it keeps). /etc/glassine/deploy.conf
+# is assembled at the build from those facts and this package's own settings
+# (deploy.conf.policy).
 # networkmanager-wlan.conf: a stable WiFi MAC (the chip gives the driver none).
 # migrate.list: the state an update carries (the Bluetooth address, the clock offset).
 # glassine-powerd: the sleep policy (power key, cover, idle; sticky sleep with WiFi
@@ -166,13 +167,16 @@ check() {
 _check_deploy_conf() {
 	local c="$srcdir/deploy.conf" k
 	sh -n "$c" || { echo "deploy.conf: not shell"; return 1; }
-	! grep -qE '^(SYSTEM_DEV|USERDATA_DEV|USERDATA_RESERVE_KIB)=' "$srcdir/deploy.conf.policy" \
+	! grep -qE '^(SYSTEM_DEV|USERDATA_DEV|USERDATA_RESERVE_KIB|KEEP_UPDATES)=' "$srcdir/deploy.conf.policy" \
 		|| { echo "deploy.conf.policy: sets a device fact (the description's)"; return 1; }
 	k=$(grep -E '^[A-Z0-9_]+=' "$c" | cut -d= -f1 | sort | uniq -d)
 	[ -z "$k" ] || { echo "deploy.conf: set twice: $k"; return 1; }
 	(
-		SYSTEM_DEV='' USERDATA_DEV='' USERDATA_RESERVE_KIB=''
+		SYSTEM_DEV='' USERDATA_DEV='' USERDATA_RESERVE_KIB='' KEEP_UPDATES=1
 		. "$c"
+		# KEEP_UPDATES (boot spec 007): the description's keep_updates; a description
+		# without it keeps 1, as glassine-deploy does without the key
+		case $KEEP_UPDATES in ''|*[!0-9]*|0*) echo "deploy.conf: KEEP_UPDATES=$KEEP_UPDATES"; exit 1 ;; esac
 		case $SYSTEM_DEV in /dev/disk/by-partlabel/?*) ;; *) echo "deploy.conf: SYSTEM_DEV=$SYSTEM_DEV"; exit 1 ;; esac
 		case $USERDATA_DEV in /dev/disk/by-partlabel/?*) ;; *) echo "deploy.conf: USERDATA_DEV=$USERDATA_DEV"; exit 1 ;; esac
 		case $USERDATA_RESERVE_KIB in ''|*[!0-9]*) echo "deploy.conf: USERDATA_RESERVE_KIB=$USERDATA_RESERVE_KIB"; exit 1 ;; esac

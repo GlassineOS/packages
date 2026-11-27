@@ -6,18 +6,19 @@
 pkgname=glassine-planner
 pkgver=0_git20261121
 # GlassineOS/planner main
-_commit=3ddf00877025899d8c05807049e7a61db024b98f
-pkgrel=10
+_commit=c2bcbc089994607f49664444216b177f6cae8997
+pkgrel=11
 pkgdesc="GlassineOS planner: days, weeks and months written with the pen"
 url="https://github.com/GlassineOS/planner"
 arch="all"
 license="GPL-2.0-or-later"
-# the region display (Set in Autograph) needs the client library and service of r16
-depends="glassine-handwriting-service>=0_git20261119-r16 glassine-handwriting-libs>=0_git20261119-r16"
+# the region display (Set in Autograph) needs the client library and service of r16;
+# wrapped lines are spaced by ui_text_wrap of glassine-ui 1.5.1
+depends="glassine-handwriting-service>=0_git20261119-r16 glassine-handwriting-libs>=0_git20261119-r16 glassine-ui>=1.5.1"
 makedepends="
 	cairo-dev
 	glassine-handwriting-dev>=0_git20261119-r16
-	glassine-ui-dev>=1.4.0
+	glassine-ui-dev>=1.5.1
 	glib-dev
 	librsvg-dev
 	libxkbcommon-dev
@@ -46,5 +47,5 @@ package() {
 	make UI_SYSTEM=1 DESTDIR="$pkgdir" PREFIX=/usr install
 }
 sha512sums="
-947e63255c52ffbecc5bb140ba0e9ff4778b53b24be569228609c7c4fe4185159e87650a73bf2c5b2773b956dbf021d44aa96953955f218cad0eed0ea6fa59b9  planner-3ddf00877025899d8c05807049e7a61db024b98f.tar.gz
+d33c745753354481b87cffd6065360757c3157e01edf4bc6ca850f03b04426eed89b97f707e0a68f4dc901aa32becbdb1839aa33489c56a7e10080117e47604b  planner-c2bcbc089994607f49664444216b177f6cae8997.tar.gz
 "

@@ -9,8 +9,9 @@
 # seed service and the initramfs read it), slots.conf names Android's slot for the
 # power menu, and deploy.conf.device holds glassine-deploy's device facts (the system
 # and data partitions, the space kept free at the data partition's end for Android's
-# encryption footer). /etc/glassine/deploy.conf is assembled at the build from those
-# facts and this package's own settings (deploy.conf.policy).
+# encryption footer, how many earlier deployments it keeps). /etc/glassine/deploy.conf
+# is assembled at the build from those facts and this package's own settings
+# (deploy.conf.policy).
 # networkmanager-wlan.conf: a stable WiFi MAC (the chip gives the driver none).
 # migrate.list: the state an update carries (the Bluetooth address, the clock offset).
 # glassine-powerd: the sleep policy (power key, cover, idle; sticky sleep with WiFi
@@ -26,7 +27,7 @@
 # (with its modprobe.d file and the speaker and microphone routing).
 pkgname=device-onyx-noteair
 pkgver=4
-pkgrel=11
+pkgrel=12
 builddir="$srcdir"
 pkgdesc="Onyx Boox Note Air: system services, device data list, modem, radios and sound"
 url="https://github.com/GlassineOS/packages"
@@ -41,7 +42,7 @@ license="GPL-2.0-or-later"
 # bluez-btmgmt (the Bluetooth address: the chip has none)
 # GlassineOS/installer: the description (devices/onyx-noteair.toml) and
 # glassine-device-files, which checks it as the installer does and derives the files
-_installer=9ef4bc19d5be77421bd03fd2a0d6551df27632b7
+_installer=02b4429bddd734dc2393a008a006654e77c86343
 depends="busybox glassine-deploy>=0.4.0 glassine-epdd glassine-slot
 	alsa-utils bluez-btmgmt qrtr qrtr-diag-sink rmtfs tqftpserv"
 source="installer-$_installer.tar.gz::https://github.com/GlassineOS/installer/archive/$_installer.tar.gz
@@ -166,13 +167,16 @@ check() {
 _check_deploy_conf() {
 	local c="$srcdir/deploy.conf" k
 	sh -n "$c" || { echo "deploy.conf: not shell"; return 1; }
-	! grep -qE '^(SYSTEM_DEV|USERDATA_DEV|USERDATA_RESERVE_KIB)=' "$srcdir/deploy.conf.policy" \
+	! grep -qE '^(SYSTEM_DEV|USERDATA_DEV|USERDATA_RESERVE_KIB|KEEP_UPDATES)=' "$srcdir/deploy.conf.policy" \
 		|| { echo "deploy.conf.policy: sets a device fact (the description's)"; return 1; }
 	k=$(grep -E '^[A-Z0-9_]+=' "$c" | cut -d= -f1 | sort | uniq -d)
 	[ -z "$k" ] || { echo "deploy.conf: set twice: $k"; return 1; }
 	(
-		SYSTEM_DEV='' USERDATA_DEV='' USERDATA_RESERVE_KIB=''
+		SYSTEM_DEV='' USERDATA_DEV='' USERDATA_RESERVE_KIB='' KEEP_UPDATES=1
 		. "$c"
+		# KEEP_UPDATES (boot spec 007): the description's keep_updates; a description
+		# without it keeps 1, as glassine-deploy does without the key
+		case $KEEP_UPDATES in ''|*[!0-9]*|0*) echo "deploy.conf: KEEP_UPDATES=$KEEP_UPDATES"; exit 1 ;; esac
 		case $SYSTEM_DEV in /dev/disk/by-partlabel/?*) ;; *) echo "deploy.conf: SYSTEM_DEV=$SYSTEM_DEV"; exit 1 ;; esac
 		case $USERDATA_DEV in /dev/disk/by-partlabel/?*) ;; *) echo "deploy.conf: USERDATA_DEV=$USERDATA_DEV"; exit 1 ;; esac
 		case $USERDATA_RESERVE_KIB in ''|*[!0-9]*) echo "deploy.conf: USERDATA_RESERVE_KIB=$USERDATA_RESERVE_KIB"; exit 1 ;; esac
@@ -572,7 +576,7 @@ package() {
 	install -Dm755 "$srcdir"/hibernate-refresh "$pkgdir"$h/90-refresh
 }
 sha512sums="
-5132ef0e541c3f9a47a10dc22defeda133925a268cb76ae68f4a4a661f5d2371ca6d227c4daa6511d7366f542551fd83b098d7b0c503c681df1dc60b98f392a7  installer-9ef4bc19d5be77421bd03fd2a0d6551df27632b7.tar.gz
+b6f7e8a58dcd1782077f0e867de83a5c265934122d7224e30843050e7775ccd7a709dd9730983c3d3947ac8a1c91b70e4dabc00fd5d70ed78208a6a490d9e00d  installer-02b4429bddd734dc2393a008a006654e77c86343.tar.gz
 a7f981b0c35bacfd4a06c67b272c5d75dcc6efb9ff9eabcd344f39bd3e39e82ff5ae9c1dd716f3b5520b3cf62efaa851e3666e97d264777fb10dbe44cf74a741  deploy.conf.policy
 45d13ed941b92d3e7e7c44279e88fd364fcde1d630adad7ccb9b07bc6e273f7e4f587ed3513280f9c7dcd0536af0a84083e88e3d137d78586913a5c945b516d0  epd.conf
 9706b48fca84aa8f0714f30994c648264612bdd078a21a51c9dbd5195445e2f3654068532c07818e9606e881c31a9820000a8dce7085dc00e9e69af1ef85abc1  glassine-clock

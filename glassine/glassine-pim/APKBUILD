@@ -9,8 +9,8 @@
 pkgname=glassine-pim
 pkgver=0_git20261128
 # GlassineOS/pim main
-_commit=93d123bbe458b7d1b3a9316224ac7cb0c47c6e24
-pkgrel=0
+_commit=8cea488bcbd01eadf770d7c14b9134093eaa1dfa
+pkgrel=1
 pkgdesc="GlassineOS calendar and contacts store, account service and sync"
 url="https://github.com/GlassineOS/pim"
 arch="noarch"
@@ -37,5 +37,5 @@ package() {
 	make DESTDIR="$pkgdir" PREFIX=/usr install
 }
 sha512sums="
-6b386c293d2d1a6b2450ee4389869434f8ea35b87cbf8e4b45efaaf633319ea00f08cc81a0e73274ea944674238922760d895b6f5ed24af33d44ad163becceca  pim-93d123bbe458b7d1b3a9316224ac7cb0c47c6e24.tar.gz
+d7842a3ee73aa0338a9b173263d85d9082d0e198c13f72bcddc860fbfd7bbdd399dc6ddbb6389e044c7ea6cc3c0ae319673087e9e2017226ef5e50b281524acb  pim-8cea488bcbd01eadf770d7c14b9134093eaa1dfa.tar.gz
 "

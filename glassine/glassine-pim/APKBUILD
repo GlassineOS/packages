@@ -1,0 +1,41 @@
+# Maintainer: Moritz Meißelbach <moritz@glassine.org>
+# The person's calendars, to-dos, notes and contacts, from GlassineOS/pim (spec 001,
+# GlassineOS/docs decision 0017): the account service glassine-pim (session bus name
+# org.glassine.Pim1, D-Bus activatable), the per-person store (Radicale embedded, on
+# 127.0.0.1 only, started on the first connection) and the sync engine (pimsync, one run
+# per account). Account secrets go to the Secret Service (decision 0018), here
+# gnome-keyring's secrets component. With evolution-data-server installed, the store's
+# collections are EDS sources too. The session starts it with `glassine-pim`.
+pkgname=glassine-pim
+pkgver=0_git20261128
+# GlassineOS/pim main
+_commit=93d123bbe458b7d1b3a9316224ac7cb0c47c6e24
+pkgrel=0
+pkgdesc="GlassineOS calendar and contacts store, account service and sync"
+url="https://github.com/GlassineOS/pim"
+arch="noarch"
+license="GPL-2.0-or-later"
+depends="
+	gnome-keyring
+	libsecret
+	pimsync
+	py3-dnspython
+	py3-gobject3
+	python3
+	radicale
+	"
+makedepends="python3"
+options="!check" # pim's host tests (test servers, a session bus, a keyring) run in its CI
+source="pim-$_commit.tar.gz::$url/archive/$_commit.tar.gz"
+builddir="$srcdir/pim-$_commit"
+
+build() {
+	make PREFIX=/usr
+}
+
+package() {
+	make DESTDIR="$pkgdir" PREFIX=/usr install
+}
+sha512sums="
+6b386c293d2d1a6b2450ee4389869434f8ea35b87cbf8e4b45efaaf633319ea00f08cc81a0e73274ea944674238922760d895b6f5ed24af33d44ad163becceca  pim-93d123bbe458b7d1b3a9316224ac7cb0c47c6e24.tar.gz
+"
